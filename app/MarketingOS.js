@@ -117,19 +117,17 @@ export default function MarketingOS() {
     if (!topic.trim()) return;
     setGenerating(true); setGenError(""); setGenerated(null);
     try {
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
+      const res = await fetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 1000,
           system: brand.voice,
-          messages: [{ role: "user", content: `Write a ${platform} post about: "${topic}"\n\nReturn ONLY a JSON object:\n{\n  "post": "ready to copy-paste post text",\n  "hashtags": "3-5 relevant hashtags",\n  "tip": "one short posting tip"\n}\nNo markdown, no backticks, raw JSON only.` }]
+          prompt: `Write a ${platform} post about: "${topic}"\n\nReturn ONLY a JSON object:\n{\n  "post": "ready to copy-paste post text",\n  "hashtags": "3-5 relevant hashtags",\n  "tip": "one short posting tip"\n}\nNo markdown, no backticks, raw JSON only.`
         })
       });
       const json = await res.json();
-      const text = json.content?.find(b => b.type === "text")?.text || "";
-      setGenerated(JSON.parse(text.replace(/```json|```/g, "").trim()));
+      if (json.error) throw new Error(json.error);
+      setGenerated(json);
     } catch { setGenError("Generation failed — check your connection and try again."); }
     setGenerating(false);
   }
