@@ -228,23 +228,41 @@ export default function MarketingOS() {
     const file = e.target.files[0]; if (!file) return;
     setUploadingImage(true); setUploadError("");
     try {
-      const fd = new FormData();
-      fd.append("file",file); fd.append("brandId",activeBrand); fd.append("caption","");
-      const res = await fetch("/api/images",{method:"POST",body:fd});
-      const img = await res.json();
-      if (img.error) {
+      // Convert to JPEG via canvas — fixes HEIC and any other iOS format issues
+      const jpegBlob = await new Promise((resolve, reject) => {
         const reader = new FileReader();
-        reader.onload = ()=>{
-          const url = reader.result;
-          if (forPost) setPostForm(f=>({...f,imageUrl:url}));
-          else setImages(prev=>({...prev,[activeBrand]:[...(prev[activeBrand]||[]),{url,id:Date.now().toString(),createdAt:new Date().toISOString()}]}));
+        reader.onload = ev => {
+          const img = new window.Image();
+          img.onload = () => {
+            const canvas = document.createElement("canvas");
+            // Scale down if too large — max 1600px on longest side
+            const max = 1600;
+            let w = img.width, h = img.height;
+            if (w > max || h > max) {
+              if (w > h) { h = Math.round(h * max / w); w = max; }
+              else { w = Math.round(w * max / h); h = max; }
+            }
+            canvas.width = w; canvas.height = h;
+            const ctx = canvas.getContext("2d");
+            ctx.drawImage(img, 0, 0, w, h);
+            canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error("Canvas conversion failed")), "image/jpeg", 0.85);
+          };
+          img.onerror = reject;
+          img.src = ev.target.result;
         };
+        reader.onerror = reject;
         reader.readAsDataURL(file);
-        setUploadError(`Saved locally (${img.error})`);
-      } else {
-        if (forPost) setPostForm(f=>({...f,imageUrl:img.url}));
-        else setImages(prev=>({...prev,[activeBrand]:[...(prev[activeBrand]||[]),img]}));
-      }
+      });
+
+      const fd = new FormData();
+      fd.append("file", new File([jpegBlob], "photo.jpg", {type:"image/jpeg"}));
+      fd.append("brandId", activeBrand);
+      fd.append("caption", "");
+      const res = await fetch("/api/images", {method:"POST", body:fd});
+      const img = await res.json();
+      if (img.error) throw new Error(img.error);
+      if (forPost) setPostForm(f=>({...f,imageUrl:img.url}));
+      else setImages(prev=>({...prev,[activeBrand]:[...(prev[activeBrand]||[]),img]}));
     } catch(err) { setUploadError(`Upload error: ${err.message}`); }
     setUploadingImage(false); e.target.value="";
   }
