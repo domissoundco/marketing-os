@@ -1,11 +1,12 @@
-import { list } from "@vercel/blob";
+import { list, download } from "@vercel/blob";
 
 async function loadPosts() {
   try {
-    const { blobs } = await list({ prefix: "marketing-os/posts" });
+    const { blobs } = await list({ prefix: "marketing-os/posts", token: process.env.BLOB_READ_WRITE_TOKEN });
     if (!blobs.length) return [];
-    const res = await fetch(blobs[0].url);
-    return await res.json();
+    const blob = await download(blobs[0].url, { token: process.env.BLOB_READ_WRITE_TOKEN });
+    const text = await blob.text();
+    return JSON.parse(text);
   } catch { return []; }
 }
 
@@ -30,10 +31,11 @@ export async function GET() {
     kitdesk: "kitdesk"
   };
 
+  const STATUS_EMOJI = { planned: "📝", scheduled: "⏰", published: "✅" };
+
   posts.filter(p => p.scheduledDate).forEach(post => {
     const d = post.scheduledDate.replace(/-/g, "");
     const brandName = BRANDS[post.brandId] || post.brandId;
-    const STATUS_EMOJI = { planned: "📝", scheduled: "⏰", published: "✅" };
     const emoji = STATUS_EMOJI[post.status] || "📱";
     lines.push(
       "BEGIN:VEVENT",
@@ -54,7 +56,7 @@ export async function GET() {
     headers: {
       "Content-Type": "text/calendar; charset=utf-8",
       "Cache-Control": "no-cache, no-store, must-revalidate",
-      "Content-Disposition": 'inline; filename="marketing-os.ics"'
+      "Content-Disposition": "inline; filename=\"marketing-os.ics\""
     }
   });
 }

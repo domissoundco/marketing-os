@@ -60,6 +60,12 @@ export default function MarketingOS() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
+  // Auth
+  const [authed, setAuthed] = useState(false);
+  const [passwordInput, setPasswordInput] = useState('');
+  const [passwordError, setPasswordError] = useState('');
+  const [checkingPassword, setCheckingPassword] = useState(false);
+
   // Generator
   const [topic, setTopic] = useState("");
   const [platform, setPlatform] = useState("LinkedIn");
@@ -86,7 +92,41 @@ export default function MarketingOS() {
   const fileInputRef = useRef();
   const postImageInputRef = useRef();
 
-  useEffect(() => { setMounted(true); loadData(); }, []);
+  useEffect(() => {
+    setMounted(true);
+    if (typeof window !== 'undefined' && sessionStorage.getItem('marketing-os-auth') === '1') {
+      setAuthed(true);
+      loadData();
+    } else {
+      setLoading(false);
+    }
+  }, []);
+
+  async function handleLogin(e) {
+    e?.preventDefault();
+    if (!passwordInput.trim()) return;
+    setCheckingPassword(true);
+    setPasswordError('');
+    try {
+      const res = await fetch('/api/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: passwordInput })
+      });
+      const data = await res.json();
+      if (data.ok) {
+        sessionStorage.setItem('marketing-os-auth', '1');
+        setAuthed(true);
+        loadData();
+      } else {
+        setPasswordError('Incorrect password. Try again.');
+        setPasswordInput('');
+      }
+    } catch {
+      setPasswordError('Connection error. Try again.');
+    }
+    setCheckingPassword(false);
+  }
 
   async function loadData() {
     setLoading(true);
@@ -194,13 +234,31 @@ export default function MarketingOS() {
       fd.append("caption", imageCaption);
       const res = await fetch("/api/images", { method: "POST", body: fd });
       const img = await res.json();
-      if (forPost) {
-        setPostForm(f => ({ ...f, imageUrl: img.url, imageCaption: imageCaption }));
+      if (img.error) {
+        // Fallback: use base64 locally if Blob fails
+        const reader = new FileReader();
+        reader.onload = () => {
+          const localImg = { url: reader.result, caption: imageCaption, id: Date.now().toString(), brandId: activeBrand, createdAt: new Date().toISOString() };
+          if (forPost) {
+            setPostForm(f => ({ ...f, imageUrl: localImg.url, imageCaption: imageCaption }));
+          } else {
+            setImages(prev => ({ ...prev, [activeBrand]: [...(prev[activeBrand] || []), localImg] }));
+          }
+          setImageCaption("");
+          alert(`Note: Image saved locally (Blob error: ${img.error}). Check BLOB_READ_WRITE_TOKEN in Vercel.`);
+        };
+        reader.readAsDataURL(file);
       } else {
-        setImages(prev => ({ ...prev, [activeBrand]: [...(prev[activeBrand] || []), img] }));
+        if (forPost) {
+          setPostForm(f => ({ ...f, imageUrl: img.url, imageCaption: imageCaption }));
+        } else {
+          setImages(prev => ({ ...prev, [activeBrand]: [...(prev[activeBrand] || []), img] }));
+        }
+        setImageCaption("");
       }
-      setImageCaption("");
-    } catch {}
+    } catch (err) {
+      alert(`Upload failed: ${err.message}`);
+    }
     setUploadingImage(false);
     e.target.value = "";
   }
@@ -237,14 +295,50 @@ export default function MarketingOS() {
 
   const socialLinks = settings.socialLinks?.[activeBrand] || {};
 
-  if (!mounted || loading) return (
-    <div style={{ minHeight: "100vh", background: "#F8FAFC", display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <div style={{ textAlign: "center" }}>
+
+  if (!mounted) return (
+    <div style={{ minHeight: '100vh', background: '#F8FAFC', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ textAlign: 'center' }}>
         <div style={{ fontSize: 32, marginBottom: 12 }}>⚡</div>
-        <div style={{ fontSize: 14, color: "#94A3B8", fontFamily: "Georgia, serif" }}>Loading Marketing OS...</div>
+        <div style={{ fontSize: 14, color: '#94A3B8', fontFamily: 'Georgia, serif' }}>Loading...</div>
       </div>
     </div>
   );
+
+  if (!authed) return (
+    <div style={{ minHeight: '100vh', background: 'linear-gradient(135deg, #1E293B 0%, #0F172A 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=DM+Sans:wght@300;400;500;600&display=swap');`}</style>
+      <div style={{ background: '#fff', borderRadius: 24, padding: 40, width: '100%', maxWidth: 380, boxShadow: '0 24px 80px rgba(0,0,0,0.4)', textAlign: 'center' }}>
+        <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 28, fontWeight: 700, color: '#1E293B', marginBottom: 4 }}>Marketing OS</div>
+        <div style={{ fontSize: 13, color: '#94A3B8', fontFamily: "'DM Sans', sans-serif", marginBottom: 32 }}>Private — authorised access only</div>
+        <form onSubmit={handleLogin}>
+          <input
+            type="password"
+            value={passwordInput}
+            onChange={e => setPasswordInput(e.target.value)}
+            placeholder="Enter password"
+            autoFocus
+            style={{ width: '100%', border: '1.5px solid #E2E8F0', borderRadius: 12, padding: '14px 16px', fontSize: 15, fontFamily: "'DM Sans', sans-serif", color: '#1E293B', outline: 'none', marginBottom: 12, textAlign: 'center', letterSpacing: 2 }}
+          />
+          {passwordError && <div style={{ fontSize: 13, color: '#BE123C', fontFamily: "'DM Sans', sans-serif", marginBottom: 12 }}>{passwordError}</div>}
+          <button type="submit" disabled={checkingPassword || !passwordInput.trim()} style={{ width: '100%', background: 'linear-gradient(135deg, #1E293B 0%, #334155 100%)', color: '#fff', border: 'none', padding: '14px', fontSize: 14, borderRadius: 12, fontFamily: "'DM Sans', sans-serif", fontWeight: 600, cursor: checkingPassword || !passwordInput.trim() ? 'not-allowed' : 'pointer', opacity: checkingPassword || !passwordInput.trim() ? 0.6 : 1 }}>
+            {checkingPassword ? 'Checking...' : 'Enter →'}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+
+  if (loading) return (
+    <div style={{ minHeight: '100vh', background: '#F8FAFC', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ textAlign: 'center' }}>
+        <div style={{ fontSize: 32, marginBottom: 12 }}>⚡</div>
+        <div style={{ fontSize: 14, color: '#94A3B8', fontFamily: 'Georgia, serif' }}>Loading your data...</div>
+      </div>
+    </div>
+  );
+
+
 
   return (
     <div style={{ minHeight: "100vh", background: "#F8FAFC", fontFamily: "'Georgia', 'Times New Roman', serif", color: "#1E293B" }}>
