@@ -12,16 +12,14 @@ export async function POST(request) {
 
     const name = file.name || "image.jpg";
     const ext = name.split(".").pop().toLowerCase();
-    const safeExt = ["jpg","jpeg","png","gif","webp","heic","heif"].includes(ext) ? (ext === "heic" || ext === "heif" ? "jpg" : ext) : "jpg";
+    const safeExt = ["jpg","jpeg","png","gif","webp"].includes(ext) ? ext : "jpg";
     const id = Date.now().toString();
     const filename = `marketing-os/images/${brandId}/${id}.${safeExt}`;
 
-    // Convert to buffer for reliable upload
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
     const blob = await put(filename, buffer, {
-      access: "public",
       addRandomSuffix: false,
       token: process.env.BLOB_READ_WRITE_TOKEN,
       contentType: file.type || "image/jpeg"

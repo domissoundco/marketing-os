@@ -17,7 +17,6 @@ async function loadBlob(prefix) {
 
 async function saveBlob(key, data) {
   await put(key, JSON.stringify(data), {
-    access: "public",
     addRandomSuffix: false,
     token: process.env.BLOB_READ_WRITE_TOKEN
   });
