@@ -174,12 +174,17 @@ export default function MarketingOS() {
   async function loadData() {
     setLoading(true);
     try {
-      const res = await fetch("/api/posts");
-      const data = await res.json();
+      const [dataRes, imgRes] = await Promise.all([
+        fetch("/api/posts"),
+        fetch("/api/images")
+      ]);
+      const data = await dataRes.json();
       setPosts(data.posts||[]);
       setTasks(data.tasks||[]);
       setProfiles(data.profiles||{});
       setSocialLinks(data.socialLinks||{});
+      const imgData = await imgRes.json();
+      setImages(imgData);
     } catch {}
     setLoading(false);
   }
@@ -345,8 +350,12 @@ export default function MarketingOS() {
       const res = await fetch("/api/images",{method:"POST",body:fd});
       const img = await res.json();
       if (img.error) throw new Error(img.error);
-      if (forPost) setPostForm(f=>({...f,imageUrl:img.url}));
-      else setImages(prev=>({...prev,[activeBrand]:[...(prev[activeBrand]||[]),img]}));
+      if (forPost) {
+        setPostForm(f=>({...f,imageUrl:img.url}));
+      } else {
+        // Update local state and reload from server to stay in sync
+        setImages(prev=>({...prev,[activeBrand]:[img,...(prev[activeBrand]||[])]}));
+      }
     } catch(err) { setUploadError(`Upload error: ${err.message}`); }
     setUploadingImage(false); e.target.value="";
   }
