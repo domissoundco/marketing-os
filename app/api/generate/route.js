@@ -25,26 +25,23 @@ export async function POST(request) {
         model: "claude-sonnet-4-20250514",
         max_tokens: 400,
         system: MARKETING_SCORER,
-        messages: [{
-          role: "user",
-          content: `Platform: ${platform}\n\nPost:\n${postToScore}\n\nScore this for outstanding marketing quality. Return only JSON.`
-        }]
+        messages: [{ role:"user", content:`Platform: ${platform}\n\nPost:\n${postToScore}\n\nScore this. Return only JSON.` }]
       });
       const text = msg.content?.find(b=>b.type==="text")?.text||"";
-      return Response.json(JSON.parse(text.replace(/```json|```/g,"").trim()));
+      try {
+        return Response.json(JSON.parse(text.replace(/```json|```/g,"").trim()));
+      } catch {
+        return Response.json({ score:0, breakdown:"Could not score", tip:"" });
+      }
     }
 
     // Generate from image + brief
     if (imageUrl && imageBrief) {
       const content = [];
-      // Try to include image if it's a URL (not base64 local)
       if (imageUrl.startsWith("http")) {
         content.push({ type:"image", source:{ type:"url", url:imageUrl } });
       }
-      content.push({
-        type: "text",
-        text: `Your brief from the person in this photo:\n"${imageBrief}"\n\n${prompt}`
-      });
+      content.push({ type:"text", text:`Your brief from the person in this photo:\n"${imageBrief}"\n\n${prompt}` });
       const msg = await client.messages.create({
         model: "claude-sonnet-4-20250514",
         max_tokens: 1000,
@@ -52,18 +49,32 @@ export async function POST(request) {
         messages: [{ role:"user", content }]
       });
       const text = msg.content?.find(b=>b.type==="text")?.text||"";
-      return Response.json(JSON.parse(text.replace(/```json|```/g,"").trim()));
+      try {
+        return Response.json(JSON.parse(text.replace(/```json|```/g,"").trim()));
+      } catch {
+        return Response.json({ error:"Could not parse response" }, { status:500 });
+      }
     }
 
-    // Standard text generation
+    // Standard generation (includes refine)
     const msg = await client.messages.create({
       model: "claude-sonnet-4-20250514",
       max_tokens: 1000,
-      system,
+      system: system || "You are a helpful social media writer.",
       messages: [{ role:"user", content: prompt }]
     });
     const text = msg.content?.find(b=>b.type==="text")?.text||"";
-    return Response.json(JSON.parse(text.replace(/```json|```/g,"").trim()));
+
+    // Handle style memory response (plain text, not JSON)
+    if (prompt.includes("style summary") || prompt.includes("style notes")) {
+      return Response.json({ post: text.trim() });
+    }
+
+    try {
+      return Response.json(JSON.parse(text.replace(/```json|```/g,"").trim()));
+    } catch {
+      return Response.json({ error:"Could not parse response" }, { status:500 });
+    }
 
   } catch (err) {
     console.error(err);

@@ -125,6 +125,12 @@ export default function MarketingOS() {
   const [postForm, setPostForm] = useState({platform:"LinkedIn",scheduledDate:"",content:"",status:"planned",notes:"",imageUrl:"",marketingScore:null,stats:{reach:"",engagements:"",clicks:"",enquiries:"",rating:""}});
   const [scoringPost, setScoringPost] = useState(null);
 
+  // Refine & approve
+  const [refineInput, setRefineInput] = useState("");
+  const [refining, setRefining] = useState(false);
+  const [approving, setApproving] = useState(false);
+  const [draftHistory, setDraftHistory] = useState([]);
+
   // Tasks
   const [showTaskForm, setShowTaskForm] = useState(false);
   const [taskForm, setTaskForm] = useState({title:"",dueDate:"",priority:"normal",done:false,notes:""});
@@ -232,23 +238,87 @@ export default function MarketingOS() {
     return d>=weekStart&&d<=now;
   });
 
-  const prompt = (plat) => `Write a ${plat} post.\n\nReturn ONLY valid JSON:\n{"post":"ready to copy-paste text","hashtags":"3-5 hashtags","tip":"one posting tip"}\nNo markdown, no backticks. Outstanding marketing — hook, single message, authentic voice, clear CTA.`;
+  const [context, setContext] = useState("");
+
+  function buildPrompt(plat, topicText, ctxText, styleMemory) {
+    let p = `Write a ${plat} post.`;
+    if (topicText) p += `\n\nTopic: "${topicText}"`;
+    if (ctxText) p += `\n\nExtra context from the author: "${ctxText}"`;
+    if (styleMemory) p += `\n\nThis person's proven style notes (match this): ${styleMemory}`;
+    p += `\n\nReturn ONLY valid JSON:\n{"post":"ready to copy-paste text","hashtags":"3-5 hashtags","tip":"one posting tip"}\nNo markdown, no backticks. Outstanding marketing — hook, single message, authentic voice, clear CTA.`;
+    return p;
+  }
 
   async function handleGenerate() {
     if (!topic.trim()&&!selectedImage) return;
-    setGenerating(true); setGenError(""); setGenerated(null);
+    setGenerating(true); setGenError(""); setGenerated(null); setDraftHistory([]); setRefineInput("");
     try {
       const voice = buildVoiceWithProfile(brand, brandProfile);
-      const body = {system:voice, prompt:selectedImage?`${prompt(platform)}\n\nContext: "${topic||imageBrief}"`:`${prompt(platform)}\n\nTopic: "${topic}"`};
+      const styleMemory = brandProfile.styleMemory||"";
+      const body = {
+        system: voice,
+        prompt: selectedImage
+          ? buildPrompt(platform, topic||imageBrief, context, styleMemory)
+          : buildPrompt(platform, topic, context, styleMemory)
+      };
       if (selectedImage) { body.imageUrl=selectedImage.url; body.imageBrief=imageBrief||topic; }
       const res = await fetch("/api/generate",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
       const json = await res.json();
       if (json.error) throw new Error(json.error);
       const scoreRes = await fetch("/api/generate",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({score:true,post:json.post+"\n\n"+json.hashtags,platform})});
       const scoreJson = await scoreRes.json();
-      setGenerated({...json,marketingScore:scoreJson});
+      const draft = {...json, marketingScore:scoreJson};
+      setGenerated(draft);
+      setDraftHistory([draft]);
     } catch { setGenError("Generation failed — check connection and try again."); }
     setGenerating(false);
+  }
+
+  async function handleRefine() {
+    if (!refineInput.trim()||!generated) return;
+    setRefining(true);
+    try {
+      const voice = buildVoiceWithProfile(brand, brandProfile);
+      const body = {
+        system: voice,
+        prompt: `Here is a social media post draft:\n\n"${generated.post}"\n\nThe author wants you to refine it with this direction: "${refineInput}"\n\nKeep the core message but apply the direction. Return ONLY valid JSON:\n{"post":"refined post text","hashtags":"3-5 hashtags","tip":"one posting tip"}\nNo markdown, no backticks.`
+      };
+      const res = await fetch("/api/generate",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+      const json = await res.json();
+      if (json.error) throw new Error(json.error);
+      const scoreRes = await fetch("/api/generate",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({score:true,post:json.post+"\n\n"+json.hashtags,platform})});
+      const scoreJson = await scoreRes.json();
+      const refined = {...json, marketingScore:scoreJson, refineNote:refineInput};
+      setDraftHistory(prev=>[...prev, refined]);
+      setGenerated(refined);
+      setRefineInput("");
+    } catch {}
+    setRefining(false);
+  }
+
+  async function handleApprove() {
+    if (!generated) return;
+    setApproving(true);
+    try {
+      // Save post
+      const post = {id:Date.now().toString(),brandId:activeBrand,platform,content:`${generated.post}\n\n${generated.hashtags}`,status:"planned",scheduledDate:"",notes:generated.tip||"",imageUrl:selectedImage?.url||"",marketingScore:generated.marketingScore||null,approved:true,stats:{reach:"",engagements:"",clicks:"",enquiries:"",rating:""},createdAt:new Date().toISOString()};
+
+      // Update style memory — AI writes a style note based on what was approved
+      const styleRes = await fetch("/api/generate",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
+        system:"You are a concise writing coach who observes patterns in approved social media posts.",
+        prompt:`An author just approved this ${platform} post for ${brand.name}:\n\n"${generated.post}"\n\nExisting style notes: "${brandProfile.styleMemory||"none yet"}"\n\nWrite ONE updated style summary (max 60 words) capturing what this author likes. Be specific: mention structure, tone, length preferences, what they lead with. This will be used to guide future AI generations.\n\nReturn ONLY the style summary text, no JSON, no preamble.`
+      })});
+      const styleJson = await styleRes.json();
+      const styleText = styleJson.post || styleJson.text || (typeof styleJson === "string" ? styleJson : "");
+
+      const newProfile = {...brandProfile, styleMemory: styleText};
+      const newProfiles = {...profiles, [activeBrand]: newProfile};
+
+      await persistAll({posts:[post,...posts], profiles:newProfiles});
+      setGenerated(null); setTopic(""); setContext(""); setSelectedImage(null); setImageBrief(""); setDraftHistory([]); setRefineInput("");
+      setActiveTab("posts");
+    } catch {}
+    setApproving(false);
   }
 
   function saveGeneratedPost() {
@@ -582,6 +652,10 @@ export default function MarketingOS() {
                   <textarea value={topic} onChange={e=>setTopic(e.target.value)} placeholder="e.g. new feature just launched, just wrapped a complex show..."
                     style={{width:"100%",border:"1.5px solid #E8EDF2",borderRadius:12,padding:"12px 14px",fontSize:14,minHeight:80,color:"#1E293B",background:"#FAFBFC",lineHeight:1.6,marginBottom:12}}
                     onFocus={e=>e.target.style.borderColor=brand.accent} onBlur={e=>e.target.style.borderColor="#E8EDF2"} />
+                  <label style={{fontSize:12,color:"#94A3B8",fontWeight:500,letterSpacing:0.4,display:"block",marginBottom:6}}>EXTRA CONTEXT <span style={{color:"#CBD5E1",fontWeight:400}}>(optional)</span></label>
+                  <input value={context} onChange={e=>setContext(e.target.value)} placeholder="e.g. launching this week, been in beta 6 months, first public post..."
+                    style={{width:"100%",border:"1.5px solid #E8EDF2",borderRadius:10,padding:"10px 14px",fontSize:13,color:"#1E293B",background:"#FAFBFC",marginBottom:12}}
+                    onFocus={e=>e.target.style.borderColor=brand.accent} onBlur={e=>e.target.style.borderColor="#E8EDF2"} />
                 </>
               )}
               <div style={{display:"flex",gap:10,alignItems:"flex-end",flexWrap:"wrap"}}>
@@ -598,18 +672,61 @@ export default function MarketingOS() {
               {brandProfile.currentFocus&&<div style={{fontSize:12,color:"#94A3B8",marginTop:10,borderLeft:`2px solid ${brand.border}`,paddingLeft:8}}>🎯 Current focus: {brandProfile.currentFocus}</div>}
             </div>
             {genError&&<div style={{background:"#FFF1F2",border:"1px solid #FECDD3",padding:12,borderRadius:10,color:"#BE123C",fontSize:13,marginBottom:14}}>{genError}</div>}
+
             {generated&&(
-              <div className="card fade-up" style={{padding:20,border:`1.5px solid ${brand.border}`}}>
-                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12,flexWrap:"wrap",gap:8}}>
-                  <span style={{fontSize:11,color:brand.accent,fontWeight:600,letterSpacing:0.5}}>✓ {platform.toUpperCase()} · {brand.name}</span>
-                  {generated.marketingScore&&<ScoreBadge {...generated.marketingScore} />}
-                </div>
-                <div style={{background:brand.soft,borderRadius:10,padding:14,fontSize:14,lineHeight:1.75,whiteSpace:"pre-wrap",color:"#1E293B",marginBottom:10}}>{generated.post}</div>
-                <div style={{fontSize:13,color:"#7C3AED",marginBottom:10}}>{generated.hashtags}</div>
-                {generated.tip&&<div style={{fontSize:12,color:"#64748B",borderLeft:`3px solid ${brand.border}`,paddingLeft:10,marginBottom:14}}>💡 {generated.tip}</div>}
-                <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-                  <button className="btn" onClick={()=>copyText(`${generated.post}\n\n${generated.hashtags}`,"gen")} style={{background:"#F1F5F9",color:"#475569",padding:"9px 16px",borderRadius:8,fontSize:13,fontWeight:500}}>{copied==="gen"?"✓ Copied":"Copy"}</button>
-                  <button className="btn" onClick={saveGeneratedPost} style={{background:brand.banner,color:"#fff",padding:"9px 16px",borderRadius:8,fontSize:13,fontWeight:600}}>Save to Posts →</button>
+              <div className="fade-up">
+                {/* Draft history pills */}
+                {draftHistory.length>1&&(
+                  <div style={{display:"flex",gap:6,marginBottom:10,overflowX:"auto",scrollbarWidth:"none"}}>
+                    {draftHistory.map((d,i)=>(
+                      <button key={i} className="btn" onClick={()=>setGenerated(d)} style={{flexShrink:0,background:generated===d?brand.soft:"#F1F5F9",color:generated===d?brand.accent:"#64748B",border:`1px solid ${generated===d?brand.accent:"#E2E8F0"}`,padding:"4px 12px",borderRadius:12,fontSize:12,fontWeight:generated===d?600:400}}>
+                        {i===0?"Original":`Refinement ${i}`}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                <div className="card" style={{padding:20,border:`1.5px solid ${brand.border}`,marginBottom:12}}>
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12,flexWrap:"wrap",gap:8}}>
+                    <span style={{fontSize:11,color:brand.accent,fontWeight:600,letterSpacing:0.5}}>
+                      {generated.refineNote?`✏️ Refined: "${generated.refineNote}"`:`✓ ${platform.toUpperCase()} · ${brand.name}`}
+                    </span>
+                    {generated.marketingScore&&<ScoreBadge {...generated.marketingScore} />}
+                  </div>
+                  <div style={{background:brand.soft,borderRadius:10,padding:14,fontSize:14,lineHeight:1.75,whiteSpace:"pre-wrap",color:"#1E293B",marginBottom:10}}>{generated.post}</div>
+                  <div style={{fontSize:13,color:"#7C3AED",marginBottom:10}}>{generated.hashtags}</div>
+                  {generated.tip&&<div style={{fontSize:12,color:"#64748B",borderLeft:`3px solid ${brand.border}`,paddingLeft:10,marginBottom:14}}>💡 {generated.tip}</div>}
+
+                  {/* Action buttons */}
+                  <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:16}}>
+                    <button className="btn" onClick={()=>copyText(`${generated.post}\n\n${generated.hashtags}`,"gen")} style={{background:"#F1F5F9",color:"#475569",padding:"9px 14px",borderRadius:8,fontSize:13,fontWeight:500}}>{copied==="gen"?"✓ Copied":"Copy"}</button>
+                    <button className="btn" onClick={saveGeneratedPost} style={{background:"#F1F5F9",color:"#475569",padding:"9px 14px",borderRadius:8,fontSize:13,fontWeight:500}}>Save Draft</button>
+                    <button className="btn" onClick={handleApprove} disabled={approving} style={{background:`linear-gradient(135deg, #166534, #15803d)`,color:"#fff",padding:"9px 18px",borderRadius:8,fontSize:13,fontWeight:700,opacity:approving?0.6:1,display:"flex",alignItems:"center",gap:6}}>
+                      {approving?<><span className="spinner">⟳</span> Saving...</>:<>That's the one ✓</>}
+                    </button>
+                  </div>
+
+                  {/* Refine input */}
+                  <div style={{borderTop:`1px solid ${brand.border}`,paddingTop:14}}>
+                    <div style={{fontSize:12,color:"#94A3B8",marginBottom:8,fontWeight:500}}>Not quite right? Give it a direction:</div>
+                    <div style={{display:"flex",gap:8}}>
+                      <input value={refineInput} onChange={e=>setRefineInput(e.target.value)}
+                        onKeyDown={e=>e.key==="Enter"&&!refining&&refineInput.trim()&&handleRefine()}
+                        placeholder="e.g. shorter, punchier opener, more technical, less salesy..."
+                        style={{flex:1,border:"1.5px solid #E8EDF2",borderRadius:8,padding:"9px 12px",fontSize:13,color:"#1E293B",background:"#FAFBFC"}}
+                        onFocus={e=>e.target.style.borderColor=brand.accent} onBlur={e=>e.target.style.borderColor="#E8EDF2"} />
+                      <button className="btn" onClick={handleRefine} disabled={refining||!refineInput.trim()} style={{background:brand.banner,color:"#fff",padding:"9px 16px",borderRadius:8,fontSize:13,fontWeight:600,flexShrink:0,opacity:refining||!refineInput.trim()?0.5:1}}>
+                        {refining?<span className="spinner">⟳</span>:"Refine →"}
+                      </button>
+                    </div>
+
+                    {/* Quick refine chips */}
+                    <div style={{display:"flex",gap:6,marginTop:8,flexWrap:"wrap"}}>
+                      {["Shorter","Punchier opener","More technical","Less salesy","Add a question","More casual"].map(chip=>(
+                        <button key={chip} className="btn" onClick={()=>{setRefineInput(chip);}} style={{background:"#F8FAFC",border:"1px solid #E2E8F0",color:"#64748B",padding:"4px 10px",borderRadius:12,fontSize:11,cursor:"pointer"}}>{chip}</button>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               </div>
             )}
