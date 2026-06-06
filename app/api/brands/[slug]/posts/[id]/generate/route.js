@@ -17,16 +17,23 @@ export async function POST(req, { params }) {
 
     const brand = await getBrand(params.slug);
     if (!brand) return NextResponse.json({ error: 'Brand not found' }, { status: 404 });
+    const post = (brand.posts || []).find((p) => p.id === params.id);
+    if (!post) return NextResponse.json({ error: 'Post not found' }, { status: 404 });
 
-    const draft = await generatePost({ brand, brief, channel });
+    const draft = await generatePost({
+      brand,
+      brief,
+      channel,
+      images: post.images || [],
+    });
 
-    const post = await updatePost(params.slug, params.id, {
+    const updated = await updatePost(params.slug, params.id, {
       brief,
       draft,
       critique: null, // invalidate previous critique
     });
 
-    return NextResponse.json({ post });
+    return NextResponse.json({ post: updated });
   } catch (err) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }

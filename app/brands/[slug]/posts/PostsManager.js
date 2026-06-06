@@ -2,7 +2,7 @@
 
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 
 const PRINCIPLE_LABELS = {
   singleMessage: 'Single message',
@@ -12,7 +12,12 @@ const PRINCIPLE_LABELS = {
   voiceMatch:    'Voice match',
   cta:           'Clear next step',
   lengthFit:     'Length',
+  imageFit:      'Copy ↔ image fit',
 };
+
+function mediaUrl(blobUrl) {
+  return `/api/media?url=${encodeURIComponent(blobUrl)}`;
+}
 
 export default function PostsManager({ brandSlug, initialPosts }) {
   const [posts, setPosts] = useState(
@@ -60,14 +65,27 @@ export default function PostsManager({ brandSlug, initialPosts }) {
 function NewPost({ brandSlug, onCreated }) {
   const [brief, setBrief] = useState('');
   const [channel, setChannel] = useState('');
+  const [stagedFiles, setStagedFiles] = useState([]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
+  const fileRef = useRef(null);
+
+  function onFiles(e) {
+    const files = Array.from(e.target.files || []);
+    const valid = files.filter((f) => f.size <= 4 * 1024 * 1024);
+    if (valid.length < files.length) setErr('Some files exceeded 4 MB and were skipped.');
+    setStagedFiles((cur) => [...cur, ...valid]);
+    e.target.value = '';
+  }
+
+  function removeStaged(idx) {
+    setStagedFiles((cur) => cur.filter((_, i) => i !== idx));
+  }
 
   async function generate() {
     if (!brief.trim()) return;
     setBusy(true); setErr('');
     try {
-      // 1) Create empty post
       const createRes = await fetch(`/api/brands/${brandSlug}/posts`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -77,7 +95,20 @@ function NewPost({ brandSlug, onCreated }) {
       if (!createRes.ok) throw new Error(createData.error || 'Create failed');
       const postId = createData.post.id;
 
-      // 2) Generate draft for that post
+      // Upload staged images.
+      for (const file of stagedFiles) {
+        const fd = new FormData();
+        fd.append('file', file);
+        const upRes = await fetch(`/api/brands/${brandSlug}/posts/${postId}/images`, {
+          method: 'POST', body: fd,
+        });
+        if (!upRes.ok) {
+          const upData = await upRes.json().catch(() => ({}));
+          throw new Error(upData.error || `Image upload failed for ${file.name}`);
+        }
+      }
+
+      // Generate (server reads images from the post record).
       const genRes = await fetch(`/api/brands/${brandSlug}/posts/${postId}/generate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -87,7 +118,7 @@ function NewPost({ brandSlug, onCreated }) {
       if (!genRes.ok) throw new Error(genData.error || 'Generate failed');
 
       onCreated(genData.post);
-      setBrief(''); setChannel('');
+      setBrief(''); setChannel(''); setStagedFiles([]);
     } catch (e) {
       setErr(e.message);
     } finally {
@@ -98,33 +129,63 @@ function NewPost({ brandSlug, onCreated }) {
   return (
     <section style={cardStyles.card}>
       <div style={cardStyles.label}>New post</div>
+
       <textarea
         value={brief}
         onChange={(e) => setBrief(e.target.value)}
         placeholder="What's the post about? (e.g. announce our new product, drive sign-ups for the webinar...)"
-        rows={3}
-        disabled={busy}
-        style={cardStyles.textarea}
+        rows={3} disabled={busy} style={cardStyles.textarea}
       />
       <input
         type="text"
         value={channel}
         onChange={(e) => setChannel(e.target.value)}
         placeholder="Channel (optional — LinkedIn, Twitter, Instagram caption, email, …)"
-        disabled={busy}
-        style={cardStyles.input}
+        disabled={busy} style={cardStyles.input}
       />
+
+      {stagedFiles.length > 0 && (
+        <div style={cardStyles.thumbStrip}>
+          {stagedFiles.map((f, i) => (
+            <StagedThumb key={i} file={f} onRemove={() => removeStaged(i)} disabled={busy} />
+          ))}
+        </div>
+      )}
+
       <div style={cardStyles.actions}>
         <button
-          onClick={generate}
-          disabled={busy || !brief.trim()}
-          style={cardStyles.primary(busy || !brief.trim())}
+          type="button"
+          onClick={() => fileRef.current?.click()}
+          disabled={busy}
+          style={cardStyles.secondary(busy)}
         >
+          + Photo
+        </button>
+        <input
+          ref={fileRef} type="file" accept="image/*" multiple
+          onChange={onFiles} style={{ display: 'none' }}
+        />
+        <button onClick={generate} disabled={busy || !brief.trim()} style={cardStyles.primary(busy || !brief.trim())}>
           {busy ? 'Generating…' : 'Generate post'}
         </button>
         {err && <span style={cardStyles.err}>{err}</span>}
       </div>
     </section>
+  );
+}
+
+function StagedThumb({ file, onRemove, disabled }) {
+  const [url, setUrl] = useState('');
+  if (!url) {
+    const reader = new FileReader();
+    reader.onload = () => setUrl(reader.result);
+    reader.readAsDataURL(file);
+  }
+  return (
+    <div style={cardStyles.thumb}>
+      {url && <img src={url} alt={file.name} style={cardStyles.thumbImg} />}
+      <button onClick={onRemove} disabled={disabled} style={cardStyles.thumbRemove} title="Remove">×</button>
+    </div>
   );
 }
 
@@ -135,6 +196,7 @@ function PostCard({ brandSlug, post, onChange, onDelete }) {
   const [publishAt, setPublishAt] = useState(toLocalInput(post.publishAt));
   const [busyAction, setBusyAction] = useState('');
   const [err, setErr] = useState('');
+  const fileRef = useRef(null);
   const critique = post.critique;
 
   async function save() {
@@ -160,15 +222,12 @@ function PostCard({ brandSlug, post, onChange, onDelete }) {
     if (!draft.trim()) { setErr('Save the draft first.'); return; }
     setBusyAction('critique'); setErr('');
     try {
-      // make sure latest draft is saved first
       await fetch(`/api/brands/${brandSlug}/posts/${post.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ draft }),
       });
-      const res = await fetch(`/api/brands/${brandSlug}/posts/${post.id}/critique`, {
-        method: 'POST',
-      });
+      const res = await fetch(`/api/brands/${brandSlug}/posts/${post.id}/critique`, { method: 'POST' });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Critique failed');
       onChange(data.post);
@@ -177,7 +236,7 @@ function PostCard({ brandSlug, post, onChange, onDelete }) {
   }
 
   async function remove() {
-    if (!confirm('Delete this post?')) return;
+    if (!confirm('Delete this post (and its images)?')) return;
     setBusyAction('delete'); setErr('');
     try {
       const res = await fetch(`/api/brands/${brandSlug}/posts/${post.id}`, { method: 'DELETE' });
@@ -189,7 +248,40 @@ function PostCard({ brandSlug, post, onChange, onDelete }) {
     } catch (e) { setErr(e.message); setBusyAction(''); }
   }
 
+  async function uploadImage(e) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    if (file.size > 4 * 1024 * 1024) { setErr('File too large — max 4 MB'); return; }
+    setBusyAction('upload'); setErr('');
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const res = await fetch(`/api/brands/${brandSlug}/posts/${post.id}/images`, {
+        method: 'POST', body: fd,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Upload failed');
+      onChange(data.post);
+    } catch (e) { setErr(e.message); }
+    finally { setBusyAction(''); }
+  }
+
+  async function deleteImage(imageId) {
+    setBusyAction('img-delete'); setErr('');
+    try {
+      const res = await fetch(`/api/brands/${brandSlug}/posts/${post.id}/images/${imageId}`, {
+        method: 'DELETE',
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Delete failed');
+      onChange(data.post);
+    } catch (e) { setErr(e.message); }
+    finally { setBusyAction(''); }
+  }
+
   const busy = !!busyAction;
+  const images = post.images || [];
 
   return (
     <section style={cardStyles.card}>
@@ -200,11 +292,27 @@ function PostCard({ brandSlug, post, onChange, onDelete }) {
         </span>
       </div>
 
+      {images.length > 0 && (
+        <div style={cardStyles.thumbStrip}>
+          {images.map((img) => (
+            <div key={img.id} style={cardStyles.thumb}>
+              <img src={mediaUrl(img.url)} alt={img.alt || ''} style={cardStyles.thumbImg} />
+              <button
+                onClick={() => deleteImage(img.id)}
+                disabled={busy}
+                style={cardStyles.thumbRemove}
+                title="Remove image"
+              >×</button>
+            </div>
+          ))}
+        </div>
+      )}
+
       <textarea
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
         placeholder="Draft appears here after generate, or write your own."
-        rows={Math.min(12, Math.max(4, draft.split('\n').length + 1))}
+        rows={Math.min(12, Math.max(4, (draft || '').split('\n').length + 1))}
         disabled={busy}
         style={cardStyles.textarea}
       />
@@ -230,6 +338,13 @@ function PostCard({ brandSlug, post, onChange, onDelete }) {
         <button onClick={critiqueNow} disabled={busy || !draft.trim()} style={cardStyles.secondary(busy || !draft.trim())}>
           {busyAction === 'critique' ? 'Critiquing…' : critique ? 'Re-critique' : 'Critique'}
         </button>
+        <button onClick={() => fileRef.current?.click()} disabled={busy} style={cardStyles.secondary(busy)}>
+          {busyAction === 'upload' ? 'Uploading…' : '+ Photo'}
+        </button>
+        <input
+          ref={fileRef} type="file" accept="image/*"
+          onChange={uploadImage} style={{ display: 'none' }}
+        />
         <button onClick={remove} disabled={busy} style={cardStyles.danger(busy)}>
           {busyAction === 'delete' ? 'Deleting…' : 'Delete'}
         </button>
@@ -313,6 +428,14 @@ const cardStyles = {
   input: {
     width: '100%', padding: '10px 12px', border: '1px solid #ddd', borderRadius: 8,
     fontSize: 13, fontFamily: 'inherit', boxSizing: 'border-box', marginBottom: 12,
+  },
+  thumbStrip: { display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' },
+  thumb: { position: 'relative', width: 80, height: 80, borderRadius: 8, overflow: 'hidden', background: '#f5f5f5', border: '1px solid #eee' },
+  thumbImg: { width: '100%', height: '100%', objectFit: 'cover', display: 'block' },
+  thumbRemove: {
+    position: 'absolute', top: 2, right: 2, width: 22, height: 22, lineHeight: '20px', textAlign: 'center',
+    border: 'none', borderRadius: '50%', background: 'rgba(0,0,0,0.6)', color: '#fff',
+    fontSize: 14, cursor: 'pointer', padding: 0,
   },
   scheduleRow: { display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, flexWrap: 'wrap' },
   smallLabel: { fontSize: 12, color: '#666' },

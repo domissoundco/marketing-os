@@ -1,10 +1,14 @@
-// app/schedule/page.js — Cross-brand schedule.
+// app/schedule/page.js — Cross-brand schedule with image thumbnails.
 
 import Link from 'next/link';
 import { listBrands } from '../../lib/store';
 import Nav from '../_components/Nav';
 
 export const dynamic = 'force-dynamic';
+
+function mediaUrl(blobUrl) {
+  return `/api/media?url=${encodeURIComponent(blobUrl)}`;
+}
 
 export default async function SchedulePage() {
   let brands = [];
@@ -15,18 +19,13 @@ export default async function SchedulePage() {
     error = err.message;
   }
 
-  // Flatten all posts with publishAt
   const scheduled = [];
   for (const b of brands) {
     for (const p of b.posts || []) {
-      if (p.publishAt) {
-        scheduled.push({ brand: b, post: p });
-      }
+      if (p.publishAt) scheduled.push({ brand: b, post: p });
     }
   }
-
   scheduled.sort((a, b) => (a.post.publishAt || '').localeCompare(b.post.publishAt || ''));
-
   const grouped = groupByDay(scheduled);
 
   return (
@@ -49,21 +48,28 @@ export default async function SchedulePage() {
             {Object.entries(grouped).map(([dayLabel, items]) => (
               <section key={dayLabel} style={styles.daySection}>
                 <h2 style={styles.dayHeader}>{dayLabel}</h2>
-                {items.map(({ brand, post }) => (
-                  <Link
-                    key={post.id}
-                    href={`/brands/${brand.slug}/posts`}
-                    style={styles.item}
-                  >
-                    <div style={styles.itemTime}>{formatTime(post.publishAt)}</div>
-                    <div style={styles.itemBody}>
-                      <div style={styles.itemBrand}>{brand.name}</div>
-                      <div style={styles.itemText}>
-                        {truncate(post.draft || post.brief || '(empty)', 140)}
+                {items.map(({ brand, post }) => {
+                  const cover = post.images?.[0];
+                  return (
+                    <Link key={post.id} href={`/brands/${brand.slug}/posts`} style={styles.item}>
+                      <div style={styles.itemTime}>{formatTime(post.publishAt)}</div>
+                      {cover ? (
+                        <img src={mediaUrl(cover.url)} alt="" style={styles.cover} />
+                      ) : (
+                        <div style={styles.coverPlaceholder} />
+                      )}
+                      <div style={styles.itemBody}>
+                        <div style={styles.itemBrand}>{brand.name}</div>
+                        <div style={styles.itemText}>
+                          {truncate(post.draft || post.brief || '(empty)', 140)}
+                        </div>
+                        {post.images?.length > 1 && (
+                          <div style={styles.imageCount}>+{post.images.length - 1} more image{post.images.length - 1 === 1 ? '' : 's'}</div>
+                        )}
                       </div>
-                    </div>
-                  </Link>
-                ))}
+                    </Link>
+                  );
+                })}
               </section>
             ))}
           </div>
@@ -77,7 +83,6 @@ function groupByDay(items) {
   const groups = {};
   for (const it of items) {
     const d = new Date(it.post.publishAt);
-    const key = d.toDateString();
     const label = formatDay(d);
     if (!groups[label]) groups[label] = [];
     groups[label].push(it);
@@ -86,10 +91,8 @@ function groupByDay(items) {
 }
 
 function formatDay(d) {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const that = new Date(d);
-  that.setHours(0, 0, 0, 0);
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const that = new Date(d); that.setHours(0, 0, 0, 0);
   const diffDays = Math.round((that - today) / (1000 * 60 * 60 * 24));
   const date = d.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
   if (diffDays === 0) return `Today · ${date}`;
@@ -114,12 +117,15 @@ const styles = {
   daySection: { marginBottom: 28 },
   dayHeader: { fontSize: 13, fontWeight: 600, color: '#666', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10, paddingBottom: 6, borderBottom: '1px solid #eee' },
   item: {
-    display: 'flex', gap: 16, padding: '12px 14px', marginBottom: 6,
+    display: 'flex', gap: 14, alignItems: 'center', padding: '12px 14px', marginBottom: 6,
     border: '1px solid #eee', borderRadius: 10, background: '#fff',
     textDecoration: 'none', color: 'inherit',
   },
   itemTime: { fontSize: 13, fontWeight: 600, color: '#0070f3', minWidth: 60 },
+  cover: { width: 56, height: 56, objectFit: 'cover', borderRadius: 6, flexShrink: 0, background: '#f5f5f5' },
+  coverPlaceholder: { width: 56, height: 56, borderRadius: 6, flexShrink: 0, background: '#f5f5f5', border: '1px dashed #ddd' },
   itemBody: { flex: 1, minWidth: 0 },
   itemBrand: { fontSize: 12, color: '#999', marginBottom: 2 },
   itemText: { fontSize: 14, color: '#222', lineHeight: 1.5 },
+  imageCount: { fontSize: 11, color: '#999', marginTop: 4 },
 };
