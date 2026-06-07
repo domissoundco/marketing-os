@@ -3,10 +3,8 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 
 export default function PlanView({ brandSlug, initialActive, initialPast }) {
-  const router = useRouter();
   const [active, setActive] = useState(initialActive);
   const [past, setPast] = useState(initialPast || []);
   const [starting, setStarting] = useState(false);
@@ -30,6 +28,8 @@ export default function PlanView({ brandSlug, initialActive, initialPast }) {
   }
 
   async function reopen(planId) {
+    const target = past.find((p) => p.id === planId);
+    if (!target) return;
     if (active && !confirm('Reopen this plan? Your currently active plan will be closed.')) return;
     if (!active && !confirm('Reopen this plan?')) return;
     setErr('');
@@ -37,8 +37,21 @@ export default function PlanView({ brandSlug, initialActive, initialPast }) {
       const res = await fetch(`/api/brands/${brandSlug}/plans/${planId}/reopen`, { method: 'POST' });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Reopen failed');
-      // Simplest: refresh server data so active/past lists are correctly rebuilt.
-      router.refresh();
+
+      // Update local state directly so the UI reflects the new state immediately.
+      const reopenedPlan = data.plan;
+      const now = new Date().toISOString();
+      setPast((cur) => {
+        let next = cur.filter((p) => p.id !== planId);
+        if (active) {
+          next = [
+            { ...active, closedAt: now, reviewDecision: active.reviewDecision || 'auto-closed' },
+            ...next,
+          ];
+        }
+        return next;
+      });
+      setActive(reopenedPlan);
     } catch (e) { setErr(e.message); }
   }
 
@@ -184,8 +197,6 @@ function PlanEditor({ brandSlug, plan, onChange, onClosed, onStartNew }) {
   );
 }
 
-// ── Review dialog ─────────────────────────────────────────────────────
-
 function ReviewDialog({ brandSlug, planId, onClose, onClosed, onStartNew }) {
   const [decision, setDecision] = useState('');
   const [notes, setNotes] = useState('');
@@ -240,8 +251,6 @@ function ReviewDialog({ brandSlug, planId, onClose, onClosed, onStartNew }) {
   );
 }
 
-// ── Past plan summary ─────────────────────────────────────────────────
-
 function PastPlan({ plan, onReopen, onDelete }) {
   const [open, setOpen] = useState(false);
   const date = plan.closedAt ? new Date(plan.closedAt).toLocaleDateString() : '';
@@ -267,8 +276,6 @@ function PastPlan({ plan, onReopen, onDelete }) {
     </div>
   );
 }
-
-// ── Building blocks ───────────────────────────────────────────────────
 
 function Section({ number, title, hint, children }) {
   return (
@@ -323,10 +330,8 @@ const styles = {
   sectionTitle: { fontSize: 16, fontWeight: 700, margin: '0 0 4px', display: 'flex', alignItems: 'baseline', gap: 8 },
   sectionNum: { fontSize: 13, fontWeight: 700, color: '#0070f3', background: '#e8f3ff', padding: '2px 8px', borderRadius: 4 },
   sectionHint: { color: '#888', fontSize: 12, margin: '0 0 10px' },
-
   subLabel: { display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 2 },
   subHint: { fontSize: 11, color: '#999', marginBottom: 6 },
-
   textarea: {
     width: '100%', padding: '10px 12px', border: '1px solid #ddd', borderRadius: 8,
     fontSize: 14, fontFamily: 'inherit', lineHeight: 1.55, resize: 'vertical', boxSizing: 'border-box',
@@ -384,7 +389,6 @@ const styles = {
     padding: '6px 12px', background: '#fff', color: '#c00', border: '1px solid #fcc',
     borderRadius: 6, fontSize: 12, cursor: 'pointer',
   },
-
   fieldLabel: { fontSize: 11, fontWeight: 600, color: '#666', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 },
   fieldValue: { fontSize: 13, color: '#333', lineHeight: 1.5, whiteSpace: 'pre-wrap' },
 };
