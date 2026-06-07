@@ -5,11 +5,12 @@
 import { useState } from 'react';
 
 const FIELDS = [
-  { key: 'vision',      label: 'Vision',         hint: "The future state you're working toward.",       rows: 3 },
-  { key: 'mission',     label: 'Mission',        hint: 'What you do every day to get there.',           rows: 3 },
-  { key: 'positioning', label: 'Positioning',    hint: "Who it's for, what it does, why it's different.", rows: 4 },
-  { key: 'audience',    label: 'Audience',       hint: "Who you're talking to.",                        rows: 3 },
-  { key: 'voice',       label: 'Voice & tone',   hint: 'How you sound. Words you use, words you don\'t.', rows: 4 },
+  { key: 'vision',      label: 'Vision',         hint: "Where the brand is heading over the next 3–5 years.",  rows: 3 },
+  { key: 'mission',     label: 'Mission',        hint: 'What you do every day to get there.',                  rows: 3 },
+  { key: 'positioning', label: 'Positioning',    hint: "Why customers choose this brand over alternatives.",   rows: 4 },
+  { key: 'coreOffer',   label: 'Core Offer',     hint: "What product or service is being sold.",               rows: 3 },
+  { key: 'audience',    label: 'Audience',       hint: "Who you're talking to.",                               rows: 3 },
+  { key: 'voice',       label: 'Voice & tone',   hint: 'How you sound. Words you use, words you don\'t.',      rows: 4 },
 ];
 
 export default function BrandEditor({ initial }) {
@@ -23,8 +24,7 @@ export default function BrandEditor({ initial }) {
   }
 
   async function save() {
-    setBusy(true);
-    setErr('');
+    setBusy(true); setErr('');
     try {
       const res = await fetch(`/api/brands/${initial.slug}`, {
         method: 'PUT',
@@ -34,11 +34,8 @@ export default function BrandEditor({ initial }) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || `Save failed (${res.status})`);
       setSavedAt(data.brand.updatedAt);
-    } catch (e) {
-      setErr(e.message);
-    } finally {
-      setBusy(false);
-    }
+    } catch (e) { setErr(e.message); }
+    finally { setBusy(false); }
   }
 
   return (
@@ -76,24 +73,12 @@ const styles = {
   label: { display: 'block', fontWeight: 600, marginBottom: 4, fontSize: 14 },
   hint: { color: '#888', fontSize: 12, marginBottom: 8 },
   textarea: {
-    width: '100%',
-    padding: '12px 14px',
-    border: '1px solid #ddd',
-    borderRadius: 8,
-    fontSize: 14,
-    fontFamily: 'inherit',
-    lineHeight: 1.5,
-    resize: 'vertical',
-    boxSizing: 'border-box',
+    width: '100%', padding: '12px 14px', border: '1px solid #ddd', borderRadius: 8,
+    fontSize: 14, fontFamily: 'inherit', lineHeight: 1.5, resize: 'vertical', boxSizing: 'border-box',
   },
   actions: { display: 'flex', alignItems: 'center', gap: 12, marginTop: 16, flexWrap: 'wrap' },
   button: (busy) => ({
-    padding: '12px 22px',
-    background: busy ? '#999' : '#000',
-    color: '#fff',
-    border: 'none',
-    borderRadius: 8,
-    fontSize: 14,
-    cursor: busy ? 'default' : 'pointer',
+    padding: '12px 22px', background: busy ? '#999' : '#000', color: '#fff',
+    border: 'none', borderRadius: 8, fontSize: 14, cursor: busy ? 'default' : 'pointer',
   }),
 };
