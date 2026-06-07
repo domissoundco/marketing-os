@@ -12,8 +12,10 @@ export default function Nav({ brand, section }) {
         {brand && (
           <>
             <span style={styles.divider}>·</span>
-            <span style={styles.brandLabel}>{brand.name}</span>
-            <Link href={`/brands/${brand.slug}`} style={styles.link(section === 'identity')}>Identity</Link>
+            <Link href={`/brands/${brand.slug}`} style={styles.brandLabel(section === 'overview')}>
+              {brand.name}
+            </Link>
+            <Link href={`/brands/${brand.slug}/identity`} style={styles.link(section === 'identity')}>Identity</Link>
             <Link href={`/brands/${brand.slug}/plan`} style={styles.link(section === 'plan')}>Plan</Link>
             <Link href={`/brands/${brand.slug}/posts`} style={styles.link(section === 'posts')}>Posts</Link>
             <Link href={`/brands/${brand.slug}/tasks`} style={styles.link(section === 'tasks')}>Tasks</Link>
@@ -37,5 +39,8 @@ const styles = {
     textDecoration: 'none', fontWeight: active ? 600 : 400,
   }),
   divider: { color: '#ccc' },
-  brandLabel: { fontSize: 13, color: '#999', fontWeight: 500 },
+  brandLabel: (active) => ({
+    fontSize: 13, color: active ? '#000' : '#444', fontWeight: active ? 700 : 600,
+    textDecoration: 'none',
+  }),
 };

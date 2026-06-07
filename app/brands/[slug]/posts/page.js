@@ -17,9 +17,13 @@ export default async function PostsPage({ params }) {
       <main style={styles.main}>
         <header style={{ marginBottom: 24 }}>
           <h1 style={styles.h1}>Posts</h1>
-          <p style={styles.sub}>Draft, critique, and schedule posts for {brand.name}.</p>
+          <p style={styles.sub}>Batch your week — draft, ready, schedule, posted.</p>
         </header>
-        <PostsManager brandSlug={brand.slug} initialPosts={brand.posts || []} />
+        <PostsManager
+          brandSlug={brand.slug}
+          initialPosts={brand.posts || []}
+          products={brand.products || []}
+        />
       </main>
     </>
   );

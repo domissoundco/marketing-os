@@ -5,21 +5,25 @@
 import { useState, useRef } from 'react';
 
 const PRINCIPLE_LABELS = {
-  singleMessage: 'Single message',
-  audienceFit:   'Audience fit',
-  hook:          'Hook',
-  specificity:   'Specificity',
-  voiceMatch:    'Voice match',
-  cta:           'Clear next step',
-  lengthFit:     'Length',
-  imageFit:      'Copy ↔ image fit',
+  singleMessage: 'Single message', audienceFit: 'Audience fit', hook: 'Hook',
+  specificity: 'Specificity', voiceMatch: 'Voice match', cta: 'Clear next step',
+  lengthFit: 'Length', imageFit: 'Copy ↔ image fit',
 };
+
+const STATUSES = ['draft', 'ready', 'scheduled', 'posted'];
 
 function mediaUrl(blobUrl) {
   return `/api/media?url=${encodeURIComponent(blobUrl)}`;
 }
 
-export default function PostsManager({ brandSlug, initialPosts }) {
+function latestOf(post) {
+  if (!post.stats?.length) return null;
+  return post.stats.reduce((latest, cur) =>
+    (cur.recordedAt || '').localeCompare(latest.recordedAt || '') > 0 ? cur : latest,
+  post.stats[0]);
+}
+
+export default function PostsManager({ brandSlug, initialPosts, products }) {
   const [posts, setPosts] = useState(
     [...initialPosts].sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''))
   );
@@ -28,12 +32,9 @@ export default function PostsManager({ brandSlug, initialPosts }) {
     setPosts((cur) => {
       const idx = cur.findIndex((p) => p.id === post.id);
       if (idx === -1) return [post, ...cur];
-      const next = [...cur];
-      next[idx] = post;
-      return next;
+      const next = [...cur]; next[idx] = post; return next;
     });
   }
-
   function removePost(id) {
     setPosts((cur) => cur.filter((p) => p.id !== id));
   }
@@ -50,6 +51,7 @@ export default function PostsManager({ brandSlug, initialPosts }) {
               key={p.id}
               brandSlug={brandSlug}
               post={p}
+              products={products}
               onChange={upsertPost}
               onDelete={() => removePost(p.id)}
             />
@@ -95,7 +97,6 @@ function NewPost({ brandSlug, onCreated }) {
       if (!createRes.ok) throw new Error(createData.error || 'Create failed');
       const postId = createData.post.id;
 
-      // Upload staged images.
       for (const file of stagedFiles) {
         const fd = new FormData();
         fd.append('file', file);
@@ -108,7 +109,6 @@ function NewPost({ brandSlug, onCreated }) {
         }
       }
 
-      // Generate (server reads images from the post record).
       const genRes = await fetch(`/api/brands/${brandSlug}/posts/${postId}/generate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -119,31 +119,24 @@ function NewPost({ brandSlug, onCreated }) {
 
       onCreated(genData.post);
       setBrief(''); setChannel(''); setStagedFiles([]);
-    } catch (e) {
-      setErr(e.message);
-    } finally {
-      setBusy(false);
-    }
+    } catch (e) { setErr(e.message); }
+    finally { setBusy(false); }
   }
 
   return (
     <section style={cardStyles.card}>
       <div style={cardStyles.label}>New post</div>
-
       <textarea
-        value={brief}
-        onChange={(e) => setBrief(e.target.value)}
-        placeholder="What's the post about? (e.g. announce our new product, drive sign-ups for the webinar...)"
+        value={brief} onChange={(e) => setBrief(e.target.value)}
+        placeholder="What's the post about?"
         rows={3} disabled={busy} style={cardStyles.textarea}
       />
       <input
         type="text"
-        value={channel}
-        onChange={(e) => setChannel(e.target.value)}
-        placeholder="Channel (optional — LinkedIn, Twitter, Instagram caption, email, …)"
+        value={channel} onChange={(e) => setChannel(e.target.value)}
+        placeholder="Channel (optional — LinkedIn, Instagram, email, …)"
         disabled={busy} style={cardStyles.input}
       />
-
       {stagedFiles.length > 0 && (
         <div style={cardStyles.thumbStrip}>
           {stagedFiles.map((f, i) => (
@@ -151,20 +144,11 @@ function NewPost({ brandSlug, onCreated }) {
           ))}
         </div>
       )}
-
       <div style={cardStyles.actions}>
-        <button
-          type="button"
-          onClick={() => fileRef.current?.click()}
-          disabled={busy}
-          style={cardStyles.secondary(busy)}
-        >
+        <button type="button" onClick={() => fileRef.current?.click()} disabled={busy} style={cardStyles.secondary(busy)}>
           + Photo
         </button>
-        <input
-          ref={fileRef} type="file" accept="image/*" multiple
-          onChange={onFiles} style={{ display: 'none' }}
-        />
+        <input ref={fileRef} type="file" accept="image/*" multiple onChange={onFiles} style={{ display: 'none' }} />
         <button onClick={generate} disabled={busy || !brief.trim()} style={cardStyles.primary(busy || !brief.trim())}>
           {busy ? 'Generating…' : 'Generate post'}
         </button>
@@ -184,20 +168,25 @@ function StagedThumb({ file, onRemove, disabled }) {
   return (
     <div style={cardStyles.thumb}>
       {url && <img src={url} alt={file.name} style={cardStyles.thumbImg} />}
-      <button onClick={onRemove} disabled={disabled} style={cardStyles.thumbRemove} title="Remove">×</button>
+      <button onClick={onRemove} disabled={disabled} style={cardStyles.thumbRemove}>×</button>
     </div>
   );
 }
 
 // ── Post card ─────────────────────────────────────────────────────────
 
-function PostCard({ brandSlug, post, onChange, onDelete }) {
+function PostCard({ brandSlug, post, products, onChange, onDelete }) {
   const [draft, setDraft] = useState(post.draft || '');
   const [publishAt, setPublishAt] = useState(toLocalInput(post.publishAt));
+  const [status, setStatus] = useState(post.status || 'draft');
+  const [productIds, setProductIds] = useState(post.productIds || []);
   const [busyAction, setBusyAction] = useState('');
   const [err, setErr] = useState('');
+  const [showStatsForm, setShowStatsForm] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
   const fileRef = useRef(null);
   const critique = post.critique;
+  const latest = latestOf(post);
 
   async function save() {
     setBusyAction('save'); setErr('');
@@ -208,7 +197,7 @@ function PostCard({ brandSlug, post, onChange, onDelete }) {
         body: JSON.stringify({
           draft,
           publishAt: publishAt ? new Date(publishAt).toISOString() : null,
-          status: publishAt ? 'scheduled' : 'draft',
+          status, productIds,
         }),
       });
       const data = await res.json();
@@ -223,8 +212,7 @@ function PostCard({ brandSlug, post, onChange, onDelete }) {
     setBusyAction('critique'); setErr('');
     try {
       await fetch(`/api/brands/${brandSlug}/posts/${post.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ draft }),
       });
       const res = await fetch(`/api/brands/${brandSlug}/posts/${post.id}/critique`, { method: 'POST' });
@@ -257,9 +245,7 @@ function PostCard({ brandSlug, post, onChange, onDelete }) {
     try {
       const fd = new FormData();
       fd.append('file', file);
-      const res = await fetch(`/api/brands/${brandSlug}/posts/${post.id}/images`, {
-        method: 'POST', body: fd,
-      });
+      const res = await fetch(`/api/brands/${brandSlug}/posts/${post.id}/images`, { method: 'POST', body: fd });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Upload failed');
       onChange(data.post);
@@ -270,9 +256,7 @@ function PostCard({ brandSlug, post, onChange, onDelete }) {
   async function deleteImage(imageId) {
     setBusyAction('img-delete'); setErr('');
     try {
-      const res = await fetch(`/api/brands/${brandSlug}/posts/${post.id}/images/${imageId}`, {
-        method: 'DELETE',
-      });
+      const res = await fetch(`/api/brands/${brandSlug}/posts/${post.id}/images/${imageId}`, { method: 'DELETE' });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Delete failed');
       onChange(data.post);
@@ -280,55 +264,67 @@ function PostCard({ brandSlug, post, onChange, onDelete }) {
     finally { setBusyAction(''); }
   }
 
+  function toggleProduct(id) {
+    setProductIds((cur) => cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]);
+  }
+
   const busy = !!busyAction;
   const images = post.images || [];
 
   return (
     <section style={cardStyles.card}>
+      {/* Status + brief */}
       <div style={cardStyles.metaRow}>
-        <span style={cardStyles.statusPill(post.status)}>{post.status}</span>
+        <select value={status} onChange={(e) => setStatus(e.target.value)} disabled={busy} style={cardStyles.statusSelect(status)}>
+          {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+        </select>
         <span style={cardStyles.metaText}>
           {post.brief ? truncate(post.brief, 80) : '(no brief)'}
         </span>
       </div>
 
+      {/* Products */}
+      {products.length > 0 && (
+        <div style={cardStyles.productsRow}>
+          {products.map((prod) => (
+            <button
+              key={prod.id}
+              onClick={() => toggleProduct(prod.id)}
+              disabled={busy}
+              style={cardStyles.productChip(productIds.includes(prod.id))}
+            >
+              {productIds.includes(prod.id) ? '✓ ' : ''}{prod.name}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Images */}
       {images.length > 0 && (
         <div style={cardStyles.thumbStrip}>
           {images.map((img) => (
             <div key={img.id} style={cardStyles.thumb}>
               <img src={mediaUrl(img.url)} alt={img.alt || ''} style={cardStyles.thumbImg} />
-              <button
-                onClick={() => deleteImage(img.id)}
-                disabled={busy}
-                style={cardStyles.thumbRemove}
-                title="Remove image"
-              >×</button>
+              <button onClick={() => deleteImage(img.id)} disabled={busy} style={cardStyles.thumbRemove}>×</button>
             </div>
           ))}
         </div>
       )}
 
       <textarea
-        value={draft}
-        onChange={(e) => setDraft(e.target.value)}
+        value={draft} onChange={(e) => setDraft(e.target.value)}
         placeholder="Draft appears here after generate, or write your own."
         rows={Math.min(12, Math.max(4, (draft || '').split('\n').length + 1))}
-        disabled={busy}
-        style={cardStyles.textarea}
+        disabled={busy} style={cardStyles.textarea}
       />
 
       <div style={cardStyles.scheduleRow}>
-        <label style={cardStyles.smallLabel}>Schedule for:</label>
+        <label style={cardStyles.smallLabel}>Publish at:</label>
         <input
-          type="datetime-local"
-          value={publishAt}
-          onChange={(e) => setPublishAt(e.target.value)}
-          disabled={busy}
-          style={cardStyles.dateInput}
+          type="datetime-local" value={publishAt}
+          onChange={(e) => setPublishAt(e.target.value)} disabled={busy} style={cardStyles.dateInput}
         />
-        {publishAt && (
-          <button onClick={() => setPublishAt('')} style={cardStyles.linkBtn} disabled={busy}>clear</button>
-        )}
+        {publishAt && <button onClick={() => setPublishAt('')} style={cardStyles.linkBtn} disabled={busy}>clear</button>}
       </div>
 
       <div style={cardStyles.actions}>
@@ -341,18 +337,184 @@ function PostCard({ brandSlug, post, onChange, onDelete }) {
         <button onClick={() => fileRef.current?.click()} disabled={busy} style={cardStyles.secondary(busy)}>
           {busyAction === 'upload' ? 'Uploading…' : '+ Photo'}
         </button>
-        <input
-          ref={fileRef} type="file" accept="image/*"
-          onChange={uploadImage} style={{ display: 'none' }}
-        />
+        <input ref={fileRef} type="file" accept="image/*" onChange={uploadImage} style={{ display: 'none' }} />
         <button onClick={remove} disabled={busy} style={cardStyles.danger(busy)}>
           {busyAction === 'delete' ? 'Deleting…' : 'Delete'}
         </button>
         {err && <span style={cardStyles.err}>{err}</span>}
       </div>
 
+      {/* Stats */}
+      <div style={statStyles.statsBlock}>
+        <div style={statStyles.statsHeader}>
+          <span style={statStyles.statsTitle}>Stats</span>
+          {latest && (
+            <span style={statStyles.statsAsOf}>
+              as of {new Date(latest.recordedAt).toLocaleString()}
+            </span>
+          )}
+          <button onClick={() => setShowStatsForm(!showStatsForm)} style={statStyles.linkBtn}>
+            {showStatsForm ? 'cancel' : latest ? '+ update' : '+ add stats'}
+          </button>
+          {post.stats?.length > 0 && (
+            <button onClick={() => setShowHistory(!showHistory)} style={statStyles.linkBtn}>
+              {showHistory ? 'hide history' : `history (${post.stats.length})`}
+            </button>
+          )}
+        </div>
+
+        {latest && (
+          <div style={statStyles.latestRow}>
+            <Stat label="Impressions" v={latest.impressions} />
+            <Stat label="Likes"       v={latest.likes} />
+            <Stat label="Comments"    v={latest.comments} />
+            <Stat label="Shares"      v={latest.shares} />
+            <Stat label="Clicks"      v={latest.clicks} />
+            <Stat label="Leads"       v={latest.leads} />
+            <Stat label="Revenue"     v={latest.revenue} prefix="£" />
+          </div>
+        )}
+
+        {showStatsForm && (
+          <StatsForm
+            brandSlug={brandSlug}
+            postId={post.id}
+            onAdded={(updatedPost) => { onChange(updatedPost); setShowStatsForm(false); }}
+            onCancel={() => setShowStatsForm(false)}
+          />
+        )}
+
+        {showHistory && post.stats?.length > 0 && (
+          <StatsHistory
+            brandSlug={brandSlug}
+            post={post}
+            onChange={onChange}
+          />
+        )}
+      </div>
+
       {critique && <CritiquePanel critique={critique} />}
     </section>
+  );
+}
+
+// ── Stats components ──────────────────────────────────────────────────
+
+function Stat({ label, v, prefix }) {
+  return (
+    <div style={statStyles.stat}>
+      <div style={statStyles.statValue}>{v == null ? '—' : `${prefix || ''}${Number(v).toLocaleString()}`}</div>
+      <div style={statStyles.statLabel}>{label}</div>
+    </div>
+  );
+}
+
+function StatsForm({ brandSlug, postId, onAdded, onCancel }) {
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  const localNow = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
+
+  const [recordedAt, setRecordedAt] = useState(localNow);
+  const [vals, setVals] = useState({ impressions: '', likes: '', comments: '', shares: '', clicks: '', leads: '', revenue: '' });
+  const [notes, setNotes] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+
+  function set(k, v) { setVals((c) => ({ ...c, [k]: v })); }
+
+  async function save() {
+    setBusy(true); setErr('');
+    try {
+      const res = await fetch(`/api/brands/${brandSlug}/posts/${postId}/stats`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ recordedAt: new Date(recordedAt).toISOString(), ...vals, notes }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Save failed');
+      // Reload the post to get its full stats array.
+      const refresh = await fetch(`/api/brands/${brandSlug}/posts`);
+      const refreshData = await refresh.json();
+      const updated = (refreshData.posts || []).find((p) => p.id === postId);
+      if (updated) onAdded(updated);
+      else window.location.reload();
+    } catch (e) { setErr(e.message); setBusy(false); }
+  }
+
+  return (
+    <div style={statStyles.form}>
+      <div style={statStyles.formRow}>
+        <label style={statStyles.fLabel}>As of</label>
+        <input type="datetime-local" value={recordedAt} onChange={(e) => setRecordedAt(e.target.value)} disabled={busy} style={statStyles.fInput} />
+      </div>
+      <div style={statStyles.grid}>
+        {[
+          ['impressions', 'Impressions'],
+          ['likes', 'Likes'],
+          ['comments', 'Comments'],
+          ['shares', 'Shares'],
+          ['clicks', 'Clicks'],
+          ['leads', 'Leads'],
+          ['revenue', 'Revenue (£)'],
+        ].map(([k, label]) => (
+          <div key={k} style={statStyles.fCell}>
+            <label style={statStyles.fLabel}>{label}</label>
+            <input
+              type="number" min="0" step={k === 'revenue' ? '0.01' : '1'}
+              value={vals[k]} onChange={(e) => set(k, e.target.value)} disabled={busy}
+              style={statStyles.fInput}
+            />
+          </div>
+        ))}
+      </div>
+      <div style={statStyles.formRow}>
+        <label style={statStyles.fLabel}>Notes (optional)</label>
+        <input type="text" value={notes} onChange={(e) => setNotes(e.target.value)} disabled={busy} style={statStyles.fInput} placeholder="anything worth remembering about this snapshot" />
+      </div>
+      <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+        <button onClick={save} disabled={busy} style={statStyles.saveBtn(busy)}>{busy ? 'Saving…' : 'Save stats'}</button>
+        <button onClick={onCancel} disabled={busy} style={statStyles.cancelBtn(busy)}>Cancel</button>
+      </div>
+      {err && <div style={{ color: '#c00', fontSize: 12, marginTop: 6 }}>{err}</div>}
+    </div>
+  );
+}
+
+function StatsHistory({ brandSlug, post, onChange }) {
+  const [busy, setBusy] = useState('');
+
+  async function removeEntry(statsId) {
+    if (!confirm('Delete this stats entry?')) return;
+    setBusy(statsId);
+    try {
+      const res = await fetch(`/api/brands/${brandSlug}/posts/${post.id}/stats/${statsId}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Delete failed');
+      // Locally remove
+      const updated = { ...post, stats: post.stats.filter((s) => s.id !== statsId) };
+      onChange(updated);
+    } catch (e) {
+      alert(e.message);
+    } finally { setBusy(''); }
+  }
+
+  const sorted = [...post.stats].sort((a, b) => (b.recordedAt || '').localeCompare(a.recordedAt || ''));
+
+  return (
+    <div style={statStyles.history}>
+      {sorted.map((s) => (
+        <div key={s.id} style={statStyles.historyRow}>
+          <div style={statStyles.historyTime}>{new Date(s.recordedAt).toLocaleString()}</div>
+          <div style={statStyles.historyVals}>
+            {s.impressions != null && <span>{s.impressions.toLocaleString()} imp</span>}
+            {s.clicks != null && <span>{s.clicks} clk</span>}
+            {s.leads != null && <span>{s.leads} lead</span>}
+            {s.revenue != null && <span>£{s.revenue}</span>}
+          </div>
+          {s.notes && <div style={statStyles.historyNotes}>{s.notes}</div>}
+          <button onClick={() => removeEntry(s.id)} disabled={busy === s.id} style={statStyles.historyDel}>delete</button>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -365,7 +527,6 @@ function CritiquePanel({ critique }) {
         <span style={critStyles.overall}>{critique.overall}/5</span>
         <span style={critStyles.verdict}>{critique.verdict}</span>
       </div>
-
       <div style={critStyles.grid}>
         {Object.entries(critique.scores || {}).map(([key, score]) => (
           <div key={key} style={critStyles.scoreRow}>
@@ -374,22 +535,16 @@ function CritiquePanel({ critique }) {
           </div>
         ))}
       </div>
-
       {critique.strengths?.length > 0 && (
         <div style={critStyles.section}>
           <div style={critStyles.sectionLabel}>Working</div>
-          <ul style={critStyles.list}>
-            {critique.strengths.map((s, i) => <li key={i}>{s}</li>)}
-          </ul>
+          <ul style={critStyles.list}>{critique.strengths.map((s, i) => <li key={i}>{s}</li>)}</ul>
         </div>
       )}
-
       {critique.fixes?.length > 0 && (
         <div style={critStyles.section}>
           <div style={critStyles.sectionLabel}>Fix</div>
-          <ul style={critStyles.list}>
-            {critique.fixes.map((f, i) => <li key={i}>{f}</li>)}
-          </ul>
+          <ul style={critStyles.list}>{critique.fixes.map((f, i) => <li key={i}>{f}</li>)}</ul>
         </div>
       )}
     </div>
@@ -414,11 +569,24 @@ const cardStyles = {
   label: { fontSize: 12, color: '#666', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10 },
   metaRow: { display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 },
   metaText: { color: '#888', fontSize: 13, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
-  statusPill: (status) => ({
+  statusSelect: (status) => ({
     fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5,
-    padding: '3px 8px', borderRadius: 4,
-    background: status === 'scheduled' ? '#e8f3ff' : status === 'published' ? '#e8ffe8' : '#f0f0f0',
-    color: status === 'scheduled' ? '#0070f3' : status === 'published' ? '#0a7000' : '#666',
+    padding: '4px 8px', borderRadius: 4, border: 'none', cursor: 'pointer',
+    background: status === 'scheduled' ? '#e8f3ff' :
+                status === 'posted'    ? '#e8ffe8' :
+                status === 'ready'     ? '#fff5e0' : '#f0f0f0',
+    color:      status === 'scheduled' ? '#0070f3' :
+                status === 'posted'    ? '#0a7000' :
+                status === 'ready'     ? '#a85a00' : '#666',
+  }),
+  productsRow: { display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12 },
+  productChip: (selected) => ({
+    fontSize: 11, fontWeight: 500,
+    padding: '4px 10px', borderRadius: 14,
+    border: selected ? '1px solid #000' : '1px solid #ddd',
+    background: selected ? '#000' : '#fff',
+    color: selected ? '#fff' : '#666',
+    cursor: 'pointer', fontFamily: 'inherit',
   }),
   textarea: {
     width: '100%', padding: '12px 14px', border: '1px solid #ddd', borderRadius: 8,
@@ -441,7 +609,7 @@ const cardStyles = {
   smallLabel: { fontSize: 12, color: '#666' },
   dateInput: { padding: '8px 10px', border: '1px solid #ddd', borderRadius: 6, fontSize: 13, fontFamily: 'inherit' },
   linkBtn: { background: 'none', border: 'none', color: '#666', cursor: 'pointer', fontSize: 12, padding: 0, textDecoration: 'underline' },
-  actions: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
+  actions: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 4 },
   primary: (disabled) => ({
     padding: '10px 18px', background: disabled ? '#999' : '#000', color: '#fff', border: 'none',
     borderRadius: 8, fontSize: 13, fontWeight: 500, cursor: disabled ? 'default' : 'pointer',
@@ -457,6 +625,40 @@ const cardStyles = {
     cursor: disabled ? 'default' : 'pointer',
   }),
   err: { color: '#c00', fontSize: 12, marginLeft: 8 },
+};
+
+const statStyles = {
+  statsBlock: { marginTop: 16, padding: 14, background: '#fafafa', borderRadius: 8, border: '1px solid #eee' },
+  statsHeader: { display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10, flexWrap: 'wrap' },
+  statsTitle: { fontSize: 11, fontWeight: 600, color: '#666', textTransform: 'uppercase', letterSpacing: 0.5 },
+  statsAsOf: { fontSize: 11, color: '#888', flex: 1 },
+  linkBtn: { background: 'none', border: 'none', color: '#0070f3', cursor: 'pointer', fontSize: 12, padding: 0, textDecoration: 'underline' },
+  latestRow: { display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 4 },
+  stat: { minWidth: 70 },
+  statValue: { fontSize: 14, fontWeight: 700, color: '#111' },
+  statLabel: { fontSize: 10, color: '#888', textTransform: 'uppercase', letterSpacing: 0.5, marginTop: 2 },
+
+  form: { marginTop: 10, padding: 12, background: '#fff', borderRadius: 6, border: '1px solid #ddd' },
+  formRow: { display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 8 },
+  fLabel: { fontSize: 11, fontWeight: 600, color: '#666', textTransform: 'uppercase', letterSpacing: 0.5 },
+  fInput: { padding: '6px 10px', border: '1px solid #ddd', borderRadius: 6, fontSize: 13, fontFamily: 'inherit' },
+  fCell: { display: 'flex', flexDirection: 'column', gap: 4 },
+  grid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 8, marginBottom: 8 },
+  saveBtn: (busy) => ({
+    padding: '8px 14px', background: busy ? '#999' : '#000', color: '#fff', border: 'none',
+    borderRadius: 6, fontSize: 13, cursor: busy ? 'default' : 'pointer',
+  }),
+  cancelBtn: (busy) => ({
+    padding: '8px 14px', background: '#fff', color: '#000', border: '1px solid #ddd',
+    borderRadius: 6, fontSize: 13, cursor: busy ? 'default' : 'pointer',
+  }),
+
+  history: { marginTop: 10, padding: 10, background: '#fff', borderRadius: 6, border: '1px solid #eee' },
+  historyRow: { display: 'grid', gridTemplateColumns: '180px 1fr auto', gap: 10, padding: '6px 0', borderBottom: '1px solid #f5f5f5', alignItems: 'center', fontSize: 12 },
+  historyTime: { color: '#444' },
+  historyVals: { display: 'flex', gap: 12, color: '#666' },
+  historyNotes: { gridColumn: '2 / 3', color: '#888', fontStyle: 'italic', fontSize: 11 },
+  historyDel: { background: 'none', border: 'none', color: '#c00', cursor: 'pointer', fontSize: 11, textDecoration: 'underline' },
 };
 
 const critStyles = {

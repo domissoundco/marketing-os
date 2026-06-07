@@ -1,4 +1,4 @@
-// app/brands/[slug]/BrandEditor.js — Client editor for brand identity.
+// app/brands/[slug]/identity/BrandEditor.js
 
 'use client';
 
