@@ -3,8 +3,10 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 
 export default function PlanView({ brandSlug, initialActive, initialPast }) {
+  const router = useRouter();
   const [active, setActive] = useState(initialActive);
   const [past, setPast] = useState(initialPast || []);
   const [starting, setStarting] = useState(false);
@@ -16,7 +18,6 @@ export default function PlanView({ brandSlug, initialActive, initialPast }) {
       const res = await fetch(`/api/brands/${brandSlug}/plans`, { method: 'POST' });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed');
-      // Move previous active (now closed) into past list.
       if (active) setPast((cur) => [{ ...active, closedAt: new Date().toISOString(), reviewDecision: active.reviewDecision || 'auto-closed' }, ...cur]);
       setActive(data.plan);
     } catch (e) { setErr(e.message); }
@@ -26,6 +27,32 @@ export default function PlanView({ brandSlug, initialActive, initialPast }) {
   function onClosed(closed) {
     setActive(null);
     setPast((cur) => [closed, ...cur]);
+  }
+
+  async function reopen(planId) {
+    if (active && !confirm('Reopen this plan? Your currently active plan will be closed.')) return;
+    if (!active && !confirm('Reopen this plan?')) return;
+    setErr('');
+    try {
+      const res = await fetch(`/api/brands/${brandSlug}/plans/${planId}/reopen`, { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Reopen failed');
+      // Simplest: refresh server data so active/past lists are correctly rebuilt.
+      router.refresh();
+    } catch (e) { setErr(e.message); }
+  }
+
+  async function deletePastPlan(planId) {
+    if (!confirm('Delete this plan permanently?')) return;
+    setErr('');
+    try {
+      const res = await fetch(`/api/brands/${brandSlug}/plans/${planId}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Delete failed');
+      }
+      setPast((cur) => cur.filter((p) => p.id !== planId));
+    } catch (e) { setErr(e.message); }
   }
 
   return (
@@ -46,7 +73,14 @@ export default function PlanView({ brandSlug, initialActive, initialPast }) {
       {past.length > 0 && (
         <section style={{ marginTop: 40 }}>
           <h2 style={styles.h2}>Past plans</h2>
-          {past.map((p) => <PastPlan key={p.id} plan={p} />)}
+          {past.map((p) => (
+            <PastPlan
+              key={p.id}
+              plan={p}
+              onReopen={() => reopen(p.id)}
+              onDelete={() => deletePastPlan(p.id)}
+            />
+          ))}
         </section>
       )}
     </div>
@@ -90,27 +124,21 @@ function PlanEditor({ brandSlug, plan, onChange, onClosed, onStartNew }) {
       <Section number="1" title="Vision (North Star)" hint="Where the brand is heading over the next 3–5 years.">
         <Textarea value={draft.vision} onChange={(v) => set('vision', v)} rows={2} />
       </Section>
-
       <Section number="2" title="Positioning" hint="Why customers choose this brand over alternatives.">
         <Textarea value={draft.positioning} onChange={(v) => set('positioning', v)} rows={3} />
       </Section>
-
       <Section number="3" title="Target Customer" hint="Who the brand is trying to reach.">
         <Textarea value={draft.targetCustomer} onChange={(v) => set('targetCustomer', v)} rows={2} />
       </Section>
-
       <Section number="4" title="Core Offer" hint="The product or service being sold.">
         <Textarea value={draft.coreOffer} onChange={(v) => set('coreOffer', v)} rows={2} />
       </Section>
-
       <Section number="5" title="90-Day Goal" hint="One measurable objective with a specific target and deadline.">
         <Textarea value={draft.goal} onChange={(v) => set('goal', v)} rows={2} />
       </Section>
-
       <Section number="6" title="Revenue Focus" hint="The main offer to promote this quarter.">
         <Textarea value={draft.revenueFocus} onChange={(v) => set('revenueFocus', v)} rows={2} />
       </Section>
-
       <Section number="7" title="Marketing Plan" hint="Channels, content, cadence, and the path from awareness to conversion.">
         <SubField label="Channels (ranked)" value={draft.marketing?.channels || ''} onChange={(v) => setMarketing('channels', v)} rows={2} />
         <SubField label="Content pillars" value={draft.marketing?.contentPillars || ''} onChange={(v) => setMarketing('contentPillars', v)} rows={2} />
@@ -119,25 +147,16 @@ function PlanEditor({ brandSlug, plan, onChange, onClosed, onStartNew }) {
         <SubField label="Interest" hint="Website content, case studies, newsletters, demos." value={draft.marketing?.interest || ''} onChange={(v) => setMarketing('interest', v)} rows={2} />
         <SubField label="Conversion" hint="Contact forms, consultations, quotations, sales process." value={draft.marketing?.conversion || ''} onChange={(v) => setMarketing('conversion', v)} rows={2} />
       </Section>
-
-      <Section number="8" title="Key Metrics" hint="Track 3–5 numbers. e.g. qualified enquiries, quotations, sales, revenue, traffic, subscribers.">
+      <Section number="8" title="Key Metrics" hint="Track 3–5 numbers.">
         <Textarea value={draft.keyMetrics} onChange={(v) => set('keyMetrics', v)} rows={3} />
       </Section>
-
       <Section number="9" title="Review Date">
-        <input
-          type="date"
-          value={draft.reviewDate || ''}
-          onChange={(e) => set('reviewDate', e.target.value)}
-          style={styles.dateInput}
-        />
+        <input type="date" value={draft.reviewDate || ''} onChange={(e) => set('reviewDate', e.target.value)} style={styles.dateInput} />
       </Section>
-
       <Section number="10" title="Contingency (If / Then)" hint="Pre-defined pivot if targets are not achieved.">
         <SubField label="If" value={draft.contingency?.if || ''} onChange={(v) => setContingency('if', v)} rows={2} />
         <SubField label="Then" value={draft.contingency?.then || ''} onChange={(v) => setContingency('then', v)} rows={2} />
       </Section>
-
       <Section number="11" title="This Quarter's Big Bet" hint="One major experiment or initiative to test.">
         <Textarea value={draft.bigBet} onChange={(v) => set('bigBet', v)} rows={3} />
       </Section>
@@ -199,19 +218,12 @@ function ReviewDialog({ brandSlug, planId, onClose, onClosed, onStartNew }) {
         </p>
         <div style={styles.decisionRow}>
           {['continue', 'improve', 'stop'].map((d) => (
-            <button
-              key={d} onClick={() => setDecision(d)} disabled={busy}
-              style={styles.decisionBtn(decision === d)}
-            >
+            <button key={d} onClick={() => setDecision(d)} disabled={busy} style={styles.decisionBtn(decision === d)}>
               {d.charAt(0).toUpperCase() + d.slice(1)}
             </button>
           ))}
         </div>
-        <Textarea
-          value={notes} onChange={setNotes}
-          placeholder="What went well, what didn't, what you learned…"
-          rows={4}
-        />
+        <Textarea value={notes} onChange={setNotes} placeholder="What went well, what didn't, what you learned…" rows={4} />
         <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, fontSize: 13, color: '#555' }}>
           <input type="checkbox" checked={startAfter} onChange={(e) => setStartAfter(e.target.checked)} />
           Start a new 90-day plan after closing
@@ -230,7 +242,7 @@ function ReviewDialog({ brandSlug, planId, onClose, onClosed, onStartNew }) {
 
 // ── Past plan summary ─────────────────────────────────────────────────
 
-function PastPlan({ plan }) {
+function PastPlan({ plan, onReopen, onDelete }) {
   const [open, setOpen] = useState(false);
   const date = plan.closedAt ? new Date(plan.closedAt).toLocaleDateString() : '';
   return (
@@ -246,6 +258,10 @@ function PastPlan({ plan }) {
           {plan.goal && <Field label="90-Day Goal" value={plan.goal} />}
           {plan.bigBet && <Field label="Big Bet" value={plan.bigBet} />}
           {plan.reviewNotes && <Field label="Review notes" value={plan.reviewNotes} />}
+          <div style={styles.pastActions}>
+            <button onClick={onReopen} style={styles.secondarySmall}>Reopen</button>
+            <button onClick={onDelete} style={styles.dangerSmall}>Delete permanently</button>
+          </div>
         </div>
       )}
     </div>
@@ -281,8 +297,7 @@ function Textarea({ value, onChange, rows = 2, placeholder }) {
     <textarea
       value={value || ''}
       onChange={(e) => onChange(e.target.value)}
-      rows={rows}
-      placeholder={placeholder}
+      rows={rows} placeholder={placeholder}
       style={styles.textarea}
     />
   );
@@ -299,14 +314,12 @@ function Field({ label, value }) {
 
 function truncate(s, n) { return s.length > n ? s.slice(0, n) + '…' : s; }
 
-// ── styles ────────────────────────────────────────────────────────────
-
 const styles = {
   err: { background: '#fee', color: '#900', padding: 10, borderRadius: 6, marginBottom: 12, fontSize: 13 },
   errInline: { color: '#c00', fontSize: 12, marginLeft: 8 },
   empty: { padding: 32, border: '1px dashed #ddd', borderRadius: 12, textAlign: 'center' },
 
-  section: { marginBottom: 28, paddingBottom: 4 },
+  section: { marginBottom: 28 },
   sectionTitle: { fontSize: 16, fontWeight: 700, margin: '0 0 4px', display: 'flex', alignItems: 'baseline', gap: 8 },
   sectionNum: { fontSize: 13, fontWeight: 700, color: '#0070f3', background: '#e8f3ff', padding: '2px 8px', borderRadius: 4 },
   sectionHint: { color: '#888', fontSize: 12, margin: '0 0 10px' },
@@ -335,7 +348,6 @@ const styles = {
     cursor: disabled ? 'default' : 'pointer',
   }),
 
-  // Review dialog
   overlay: {
     position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)',
     display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, zIndex: 50,
@@ -345,16 +357,14 @@ const styles = {
   decisionBtn: (selected) => ({
     flex: 1, padding: '10px 12px', borderRadius: 8, fontSize: 14, fontWeight: 500,
     border: selected ? '2px solid #000' : '1px solid #ddd',
-    background: selected ? '#f5f5f5' : '#fff', color: '#000',
-    cursor: 'pointer',
+    background: selected ? '#f5f5f5' : '#fff', color: '#000', cursor: 'pointer',
   }),
 
   h2: { fontSize: 14, fontWeight: 600, color: '#666', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 12 },
   pastCard: { border: '1px solid #eee', borderRadius: 8, marginBottom: 8, background: '#fff' },
   pastHeader: {
     width: '100%', display: 'flex', alignItems: 'center', gap: 12,
-    padding: '12px 14px', background: 'none', border: 'none', cursor: 'pointer',
-    textAlign: 'left',
+    padding: '12px 14px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left',
   },
   pastTitle: { flex: 1, fontSize: 14, fontWeight: 500, color: '#111', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
   pastDecision: (d) => ({
@@ -365,6 +375,16 @@ const styles = {
   }),
   pastDate: { fontSize: 12, color: '#999' },
   pastBody: { padding: '4px 14px 14px' },
+  pastActions: { display: 'flex', gap: 8, marginTop: 12, paddingTop: 12, borderTop: '1px solid #f0f0f0' },
+  secondarySmall: {
+    padding: '6px 12px', background: '#fff', color: '#000', border: '1px solid #ddd',
+    borderRadius: 6, fontSize: 12, cursor: 'pointer',
+  },
+  dangerSmall: {
+    padding: '6px 12px', background: '#fff', color: '#c00', border: '1px solid #fcc',
+    borderRadius: 6, fontSize: 12, cursor: 'pointer',
+  },
+
   fieldLabel: { fontSize: 11, fontWeight: 600, color: '#666', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 },
   fieldValue: { fontSize: 13, color: '#333', lineHeight: 1.5, whiteSpace: 'pre-wrap' },
 };

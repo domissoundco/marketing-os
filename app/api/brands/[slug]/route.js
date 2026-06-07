@@ -1,10 +1,11 @@
-// app/api/brands/[slug]/route.js — GET and PUT a single brand.
+// app/api/brands/[slug]/route.js — GET, PUT, DELETE a single brand.
 
 import { NextResponse } from 'next/server';
-import { getBrand, saveBrand, slugify } from '../../../../lib/store';
+import { getBrand, saveBrand, deleteBrand, slugify } from '../../../../lib/store';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+export const maxDuration = 30;
 
 export async function GET(_request, { params }) {
   const slug = slugify(params.slug);
@@ -25,6 +26,16 @@ export async function PUT(request, { params }) {
       identity: body.identity ?? existing.identity,
     });
     return NextResponse.json({ brand: updated });
+  } catch (err) {
+    return NextResponse.json({ error: err.message }, { status: 500 });
+  }
+}
+
+export async function DELETE(_request, { params }) {
+  try {
+    const slug = slugify(params.slug);
+    await deleteBrand(slug);
+    return NextResponse.json({ ok: true });
   } catch (err) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }

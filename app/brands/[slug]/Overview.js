@@ -4,8 +4,10 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 
 export default function Overview({ brandSlug, brand, plan, stats }) {
+  const router = useRouter();
   const [products, setProducts] = useState(brand.products || []);
 
   function upsertProduct(p) {
@@ -21,7 +23,6 @@ export default function Overview({ brandSlug, brand, plan, stats }) {
 
   return (
     <div>
-      {/* Active plan snapshot */}
       {plan ? (
         <section style={styles.planCard}>
           <div style={styles.planLabel}>This quarter's goal</div>
@@ -36,16 +37,11 @@ export default function Overview({ brandSlug, brand, plan, stats }) {
         </section>
       )}
 
-      {/* Pipeline */}
       <section style={styles.section}>
         <h2 style={styles.h2}>Pipeline</h2>
         <div style={styles.pipeline}>
           {['draft', 'ready', 'scheduled', 'posted'].map((s) => (
-            <Link
-              key={s}
-              href={`/brands/${brandSlug}/posts`}
-              style={styles.pipelineCell}
-            >
+            <Link key={s} href={`/brands/${brandSlug}/posts`} style={styles.pipelineCell}>
               <div style={styles.pipelineCount}>{stats.statusCounts[s] || 0}</div>
               <div style={styles.pipelineLabel}>{s}</div>
             </Link>
@@ -53,7 +49,6 @@ export default function Overview({ brandSlug, brand, plan, stats }) {
         </div>
       </section>
 
-      {/* KPIs */}
       <section style={styles.section}>
         <h2 style={styles.h2}>Last entered stats — totals across posted</h2>
         <div style={styles.kpis}>
@@ -67,7 +62,6 @@ export default function Overview({ brandSlug, brand, plan, stats }) {
         )}
       </section>
 
-      {/* Working / Not working */}
       {(stats.best.length > 0 || stats.worst.length > 0) && (
         <section style={styles.section}>
           <div style={styles.bestWorstGrid}>
@@ -87,7 +81,6 @@ export default function Overview({ brandSlug, brand, plan, stats }) {
         </section>
       )}
 
-      {/* Product focus */}
       <section style={styles.section}>
         <h2 style={styles.h2}>Product focus</h2>
         <p style={styles.hint}>What you're trying to sell. It's pointless being the best thing if nobody knows about it.</p>
@@ -100,7 +93,54 @@ export default function Overview({ brandSlug, brand, plan, stats }) {
           stats={stats.perProduct}
         />
       </section>
+
+      <DangerZone brandSlug={brandSlug} brandName={brand.name} onDeleted={() => router.push('/')} />
     </div>
+  );
+}
+
+// ── Danger zone ───────────────────────────────────────────────────────
+
+function DangerZone({ brandSlug, brandName, onDeleted }) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+
+  async function deleteBrand() {
+    const typed = prompt(
+      `This will permanently delete "${brandName}" and everything inside it — identity, plans, posts, images, stats, tasks, products. There's no undo.\n\nType the brand name to confirm:`
+    );
+    if (typed === null) return; // cancelled
+    if (typed !== brandName) {
+      setErr('Name did not match. Nothing deleted.');
+      return;
+    }
+    setBusy(true); setErr('');
+    try {
+      const res = await fetch(`/api/brands/${brandSlug}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Delete failed');
+      }
+      onDeleted();
+    } catch (e) { setErr(e.message); setBusy(false); }
+  }
+
+  return (
+    <section style={styles.danger}>
+      <h2 style={styles.dangerH2}>Danger zone</h2>
+      <div style={styles.dangerRow}>
+        <div>
+          <div style={styles.dangerTitle}>Delete this brand</div>
+          <div style={styles.dangerHint}>
+            Removes the brand and every post, image, plan, task, and stats entry attached to it.
+          </div>
+        </div>
+        <button onClick={deleteBrand} disabled={busy} style={styles.dangerBtn(busy)}>
+          {busy ? 'Deleting…' : 'Delete brand'}
+        </button>
+      </div>
+      {err && <div style={{ color: '#c00', fontSize: 13, marginTop: 8 }}>{err}</div>}
+    </section>
   );
 }
 
@@ -116,8 +156,6 @@ function Kpi({ label, value, prefix }) {
     </div>
   );
 }
-
-// ── Performance row ───────────────────────────────────────────────────
 
 function PerfRow({ brandSlug, post, stats: s, good }) {
   return (
@@ -167,12 +205,8 @@ function ProductsManager({ brandSlug, products, onAdd, onChange, onDelete, stats
             const aggr = stats.find((s) => s.product.id === p.id);
             return (
               <ProductRow
-                key={p.id}
-                brandSlug={brandSlug}
-                product={p}
-                stats={aggr}
-                onChange={onChange}
-                onDelete={onDelete}
+                key={p.id} brandSlug={brandSlug} product={p} stats={aggr}
+                onChange={onChange} onDelete={onDelete}
               />
             );
           })}
@@ -181,23 +215,8 @@ function ProductsManager({ brandSlug, products, onAdd, onChange, onDelete, stats
 
       {adding ? (
         <div style={styles.addProductBox}>
-          <input
-            type="text"
-            placeholder="Product name"
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            disabled={busy}
-            style={styles.input}
-            autoFocus
-          />
-          <textarea
-            placeholder="What is it? (optional)"
-            value={newDesc}
-            onChange={(e) => setNewDesc(e.target.value)}
-            disabled={busy}
-            rows={2}
-            style={styles.textarea}
-          />
+          <input type="text" placeholder="Product name" value={newName} onChange={(e) => setNewName(e.target.value)} disabled={busy} style={styles.input} autoFocus />
+          <textarea placeholder="What is it? (optional)" value={newDesc} onChange={(e) => setNewDesc(e.target.value)} disabled={busy} rows={2} style={styles.textarea} />
           <div style={{ display: 'flex', gap: 8 }}>
             <button onClick={save} disabled={busy || !newName.trim()} style={styles.primary(busy || !newName.trim())}>
               {busy ? 'Adding…' : 'Add product'}
@@ -267,7 +286,7 @@ function ProductRow({ brandSlug, product, stats, onChange, onDelete }) {
             {busy ? 'Saving…' : 'Save'}
           </button>
           <button onClick={() => setEditing(false)} disabled={busy} style={styles.secondary(busy)}>Cancel</button>
-          <button onClick={remove} disabled={busy} style={styles.danger(busy)}>Delete</button>
+          <button onClick={remove} disabled={busy} style={styles.dangerInline(busy)}>Delete</button>
         </div>
         {err && <div style={styles.errInline}>{err}</div>}
       </div>
@@ -312,10 +331,7 @@ const styles = {
   linkBtn: { fontSize: 13, color: '#0070f3', textDecoration: 'none' },
 
   pipeline: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 },
-  pipelineCell: {
-    padding: '14px 12px', border: '1px solid #eee', borderRadius: 10, background: '#fff',
-    textDecoration: 'none', color: 'inherit', textAlign: 'center',
-  },
+  pipelineCell: { padding: '14px 12px', border: '1px solid #eee', borderRadius: 10, background: '#fff', textDecoration: 'none', color: 'inherit', textAlign: 'center' },
   pipelineCount: { fontSize: 22, fontWeight: 700, color: '#111' },
   pipelineLabel: { fontSize: 11, color: '#888', textTransform: 'uppercase', letterSpacing: 0.5, marginTop: 4 },
 
@@ -326,8 +342,7 @@ const styles = {
 
   bestWorstGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 24 },
   perfRow: (good) => ({
-    display: 'flex', alignItems: 'center', gap: 12,
-    padding: '12px 14px', marginBottom: 6,
+    display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', marginBottom: 6,
     border: '1px solid #eee', borderRadius: 8,
     background: good ? '#f6fff6' : '#fff8f8',
     textDecoration: 'none', color: 'inherit',
@@ -350,34 +365,24 @@ const styles = {
   productDesc: { fontSize: 13, color: '#666', marginBottom: 8 },
   productStats: { display: 'flex', gap: 16, fontSize: 12, color: '#666', flexWrap: 'wrap' },
   addProductBox: { padding: 14, border: '1px solid #ddd', borderRadius: 10, background: '#fafafa', marginTop: 8 },
-  addBtn: {
-    padding: '10px 14px', border: '1px dashed #ddd', borderRadius: 8, background: 'transparent',
-    color: '#666', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit',
-  },
+  addBtn: { padding: '10px 14px', border: '1px dashed #ddd', borderRadius: 8, background: 'transparent', color: '#666', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' },
 
-  input: {
-    width: '100%', padding: '10px 12px', border: '1px solid #ddd', borderRadius: 8,
-    fontSize: 14, fontFamily: 'inherit', boxSizing: 'border-box', marginBottom: 8,
-  },
-  textarea: {
-    width: '100%', padding: '10px 12px', border: '1px solid #ddd', borderRadius: 8,
-    fontSize: 14, fontFamily: 'inherit', boxSizing: 'border-box', marginBottom: 8, resize: 'vertical',
-  },
-  select: {
-    padding: '8px 10px', border: '1px solid #ddd', borderRadius: 6,
-    fontSize: 13, fontFamily: 'inherit', marginBottom: 8,
-  },
-  primary: (disabled) => ({
-    padding: '8px 16px', background: disabled ? '#999' : '#000', color: '#fff', border: 'none',
-    borderRadius: 6, fontSize: 13, fontWeight: 500, cursor: disabled ? 'default' : 'pointer',
-  }),
-  secondary: (disabled) => ({
-    padding: '8px 14px', background: '#fff', color: disabled ? '#aaa' : '#000',
-    border: '1px solid #ddd', borderRadius: 6, fontSize: 13, cursor: disabled ? 'default' : 'pointer',
-  }),
-  danger: (disabled) => ({
-    padding: '8px 14px', background: '#fff', color: disabled ? '#aaa' : '#c00',
-    border: '1px solid #fcc', borderRadius: 6, fontSize: 13, cursor: disabled ? 'default' : 'pointer',
-  }),
+  input: { width: '100%', padding: '10px 12px', border: '1px solid #ddd', borderRadius: 8, fontSize: 14, fontFamily: 'inherit', boxSizing: 'border-box', marginBottom: 8 },
+  textarea: { width: '100%', padding: '10px 12px', border: '1px solid #ddd', borderRadius: 8, fontSize: 14, fontFamily: 'inherit', boxSizing: 'border-box', marginBottom: 8, resize: 'vertical' },
+  select: { padding: '8px 10px', border: '1px solid #ddd', borderRadius: 6, fontSize: 13, fontFamily: 'inherit', marginBottom: 8 },
+  primary: (disabled) => ({ padding: '8px 16px', background: disabled ? '#999' : '#000', color: '#fff', border: 'none', borderRadius: 6, fontSize: 13, fontWeight: 500, cursor: disabled ? 'default' : 'pointer' }),
+  secondary: (disabled) => ({ padding: '8px 14px', background: '#fff', color: disabled ? '#aaa' : '#000', border: '1px solid #ddd', borderRadius: 6, fontSize: 13, cursor: disabled ? 'default' : 'pointer' }),
+  dangerInline: (disabled) => ({ padding: '8px 14px', background: '#fff', color: disabled ? '#aaa' : '#c00', border: '1px solid #fcc', borderRadius: 6, fontSize: 13, cursor: disabled ? 'default' : 'pointer' }),
   errInline: { color: '#c00', fontSize: 12, marginTop: 6 },
+
+  danger: { marginTop: 48, padding: 20, border: '1px solid #fcc', borderRadius: 12, background: '#fff8f8' },
+  dangerH2: { fontSize: 13, fontWeight: 600, color: '#b00000', textTransform: 'uppercase', letterSpacing: 0.5, marginTop: 0, marginBottom: 12 },
+  dangerRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, flexWrap: 'wrap' },
+  dangerTitle: { fontSize: 14, fontWeight: 600, color: '#111' },
+  dangerHint: { fontSize: 12, color: '#666', marginTop: 4 },
+  dangerBtn: (disabled) => ({
+    padding: '10px 18px', background: disabled ? '#999' : '#c00', color: '#fff',
+    border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 500,
+    cursor: disabled ? 'default' : 'pointer',
+  }),
 };
