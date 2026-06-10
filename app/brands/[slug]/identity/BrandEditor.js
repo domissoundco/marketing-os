@@ -8,9 +8,11 @@ const FIELDS = [
   { key: 'vision',      label: 'Vision',         hint: "Where the brand is heading over the next 3–5 years.",  rows: 3 },
   { key: 'mission',     label: 'Mission',        hint: 'What you do every day to get there.',                  rows: 3 },
   { key: 'positioning', label: 'Positioning',    hint: "Why customers choose this brand over alternatives.",   rows: 4 },
-  { key: 'coreOffer',   label: 'Core Offer',     hint: "What product or service is being sold.",               rows: 3 },
+  { key: 'coreOffer',   label: 'Core Offer',     hint: "The one headline thing you lead with. (The full catalogue lives in Product Focus.)", rows: 3 },
   { key: 'audience',    label: 'Audience',       hint: "Who you're talking to.",                               rows: 3 },
   { key: 'voice',       label: 'Voice & tone',   hint: 'How you sound. Words you use, words you don\'t.',      rows: 4 },
+  { key: 'values',      label: 'Core Values',    hint: "What you stand for — one per line. Feeds authentic voice and helps you 'be the giraffe'.", rows: 4 },
+  { key: 'culture',     label: 'Culture Statement', hint: "Optional. How the brand operates and behaves. For a solo brand this often overlaps with voice + values — leave blank if it does.", rows: 3 },
 ];
 
 export default function BrandEditor({ initial }) {
