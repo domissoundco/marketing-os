@@ -24,6 +24,8 @@ export async function PUT(request, { params }) {
       slug,
       name: body.name ?? existing.name,
       identity: body.identity ?? existing.identity,
+      focus: body.focus ?? existing.focus,
+      focusNote: body.focusNote ?? existing.focusNote,
     });
     return NextResponse.json({ brand: updated });
   } catch (err) {
