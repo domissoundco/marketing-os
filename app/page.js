@@ -23,6 +23,7 @@ export default async function Home() {
   const brandSummaries = [];
   const focusBrands = [];
   const brandCards = [];
+  const followUps = [];
 
   for (const b of brands) {
     const plan = activePlan(b);
@@ -41,6 +42,15 @@ export default async function Home() {
       plan: plan ? { startedAt: plan.startedAt, reviewDate: plan.reviewDate, goal: plan.goal } : null,
     });
     if (b.focus) focusBrands.push({ slug: b.slug, name: b.name, focusNote: b.focusNote || '' });
+
+    for (const l of b.leads || []) {
+      if (['new', 'contacted', 'talking', 'quoted'].includes(l.status) && l.nextActionDate) {
+        followUps.push({
+          brandSlug: b.slug, brandName: b.name, leadId: l.id,
+          leadName: l.name, nextAction: l.nextAction || '', nextActionDate: l.nextActionDate,
+        });
+      }
+    }
 
     const vision = b.identity?.vision?.trim();
     brandCards.push({
@@ -65,7 +75,7 @@ export default async function Home() {
         {error && <div style={styles.error}>Error loading data: {error}</div>}
 
         {!error && (
-          <TodayDashboard brands={brandSummaries} posts={posts} initialLog={log} focusBrands={focusBrands} />
+          <TodayDashboard brands={brandSummaries} posts={posts} initialLog={log} focusBrands={focusBrands} followUps={followUps} />
         )}
 
         <section>
@@ -76,6 +86,10 @@ export default async function Home() {
             <NewBrandForm />
           </div>
         </section>
+
+        <footer style={styles.footer}>
+          <a href="/restore" style={styles.footerLink}>Data backup &amp; restore</a>
+        </footer>
       </main>
     </>
   );
@@ -87,4 +101,6 @@ const styles = {
   h2: { fontSize: 14, fontWeight: 600, color: '#666', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 12 },
   sub: { color: '#666', marginTop: 8, marginBottom: 0 },
   error: { background: '#fee', color: '#900', padding: 12, borderRadius: 8, marginBottom: 20, fontSize: 14 },
+  footer: { marginTop: 48, paddingTop: 20, borderTop: '1px solid #f0f0f0', textAlign: 'center' },
+  footerLink: { fontSize: 12, color: '#aaa', textDecoration: 'none' },
 };

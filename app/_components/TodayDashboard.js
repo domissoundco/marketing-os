@@ -44,7 +44,7 @@ function daysBetween(aIso, bIso) {
   return Math.round((b - a) / (1000 * 60 * 60 * 24));
 }
 
-export default function TodayDashboard({ brands, posts, initialLog, focusBrands = [] }) {
+export default function TodayDashboard({ brands, posts, initialLog, focusBrands = [], followUps = [] }) {
   const [log, setLog] = useState(initialLog || {});
   const today = todayStr();
   const doneToday = log[today] || [];
@@ -135,6 +135,27 @@ export default function TodayDashboard({ brands, posts, initialLog, focusBrands 
           })}
         </div>
       </section>
+
+      {/* Follow-ups due */}
+      {(() => {
+        const due = followUps.filter((f) => f.nextActionDate && f.nextActionDate <= today);
+        if (due.length === 0) return null;
+        due.sort((a, b) => (a.nextActionDate || '').localeCompare(b.nextActionDate || ''));
+        return (
+          <section style={s.section}>
+            <h2 style={s.h2}>Follow-ups due</h2>
+            {due.map((f) => (
+              <Link key={f.brandSlug + f.leadId} href={`/brands/${f.brandSlug}/leads`}
+                style={{ ...s.postRow, borderColor: f.nextActionDate < today ? '#fcc' : '#eee', background: f.nextActionDate < today ? '#fff8f8' : '#fff' }}>
+                <span style={s.postBrand}>{f.brandName}</span>
+                <span style={s.postText}><strong>{f.leadName}</strong>{f.nextAction ? ` — ${f.nextAction}` : ''}</span>
+                {f.nextActionDate < today && <span style={s.overdueTag}>overdue</span>}
+                <span style={s.postTime}>{f.nextActionDate}</span>
+              </Link>
+            ))}
+          </section>
+        );
+      })()}
 
       {/* Today's ship list */}
       <section style={s.section}>
