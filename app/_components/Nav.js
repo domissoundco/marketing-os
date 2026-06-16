@@ -20,8 +20,6 @@ export default function Nav({ brand, section }) {
             <Link href={`/brands/${brand.slug}/plan`} style={styles.link(section === 'plan')}>90-Day</Link>
             <Link href={`/brands/${brand.slug}/posts`} style={styles.link(section === 'posts')}>Posts</Link>
             <Link href={`/brands/${brand.slug}/tasks`} style={styles.link(section === 'tasks')}>Tasks</Link>
-            <span style={styles.divider}>·</span>
-            <a href={`/api/brands/${brand.slug}/export`} download style={styles.export}>↓ Export</a>
           </>
         )}
       </div>
@@ -46,5 +44,4 @@ const styles = {
     fontSize: 13, color: active ? '#000' : '#444', fontWeight: active ? 700 : 600,
     textDecoration: 'none',
   }),
-  export: { fontSize: 13, color: '#0070f3', textDecoration: 'none', fontWeight: 500 },
 };
