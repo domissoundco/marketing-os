@@ -15,8 +15,9 @@ export default function Nav({ brand, section }) {
             <Link href={`/brands/${brand.slug}`} style={styles.brandLabel(section === 'overview')}>
               {brand.name}
             </Link>
+            <Link href={`/brands/${brand.slug}/business-plan`} style={styles.link(section === 'business-plan')}>Business Plan</Link>
             <Link href={`/brands/${brand.slug}/identity`} style={styles.link(section === 'identity')}>Identity</Link>
-            <Link href={`/brands/${brand.slug}/plan`} style={styles.link(section === 'plan')}>Plan</Link>
+            <Link href={`/brands/${brand.slug}/plan`} style={styles.link(section === 'plan')}>90-Day</Link>
             <Link href={`/brands/${brand.slug}/posts`} style={styles.link(section === 'posts')}>Posts</Link>
             <Link href={`/brands/${brand.slug}/tasks`} style={styles.link(section === 'tasks')}>Tasks</Link>
           </>
