@@ -163,8 +163,17 @@ function PlanEditor({ brandSlug, plan, onChange, onClosed, onStartNew }) {
       <Section number="8" title="Key Metrics" hint="Track 3–5 numbers.">
         <Textarea value={draft.keyMetrics} onChange={(v) => set('keyMetrics', v)} rows={3} />
       </Section>
-      <Section number="9" title="Review Date">
-        <input type="date" value={draft.reviewDate || ''} onChange={(e) => set('reviewDate', e.target.value)} style={styles.dateInput} />
+      <Section number="9" title="Sprint dates" hint="When this 90-day sprint actually runs. Drives the Day N of 90 counter on your home screen.">
+        <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
+          <div>
+            <label style={styles.subLabel}>Start date</label>
+            <div><input type="date" value={draft.startDate || ''} onChange={(e) => set('startDate', e.target.value)} style={styles.dateInput} /></div>
+          </div>
+          <div>
+            <label style={styles.subLabel}>End / review date</label>
+            <div><input type="date" value={draft.reviewDate || ''} onChange={(e) => set('reviewDate', e.target.value)} style={styles.dateInput} /></div>
+          </div>
+        </div>
       </Section>
       <Section number="10" title="Contingency (If / Then)" hint="Pre-defined pivot if targets are not achieved.">
         <SubField label="If" value={draft.contingency?.if || ''} onChange={(v) => setContingency('if', v)} rows={2} />

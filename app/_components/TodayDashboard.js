@@ -190,16 +190,26 @@ export default function TodayDashboard({ brands, posts, initialLog, focusBrands 
           <p style={s.muted}>No active 90-day plans yet.</p>
         ) : (
           brands.filter((b) => b.plan).map((b) => {
-            const elapsed = Math.max(0, daysBetween(b.plan.startedAt, new Date().toISOString()));
-            const total = b.plan.reviewDate ? Math.max(1, daysBetween(b.plan.startedAt, b.plan.reviewDate)) : 90;
-            const pct = Math.min(100, Math.round((elapsed / total) * 100));
+            const start = b.plan.startDate || (b.plan.startedAt || '').slice(0, 10);
+            const end = b.plan.reviewDate || '';
+            const total = (start && end) ? Math.max(1, daysBetween(start, end)) : 90;
+            const elapsedRaw = start ? daysBetween(start, today) : 0;
+            const notStarted = start && elapsedRaw < 0;
+            const elapsed = Math.min(total, Math.max(0, elapsedRaw));
+            const pct = Math.min(100, Math.max(0, Math.round((elapsed / total) * 100)));
+            const ended = end && today > end;
+            const daysLeft = total - elapsed;
+            let badge;
+            if (notStarted) badge = `starts in ${Math.abs(elapsedRaw)}d`;
+            else if (ended) badge = 'sprint ended — review';
+            else badge = `Day ${elapsed} of ${total} · ${daysLeft}d left`;
             return (
               <Link key={b.slug} href={`/brands/${b.slug}/plan`} style={s.planRow}>
                 <div style={s.planTop}>
                   <span style={s.planName}>{b.name}</span>
-                  <span style={s.planDay}>Day {elapsed} of {total}</span>
+                  <span style={{ ...s.planDay, ...(ended ? { color: '#b00000', fontWeight: 600 } : {}) }}>{badge}</span>
                 </div>
-                <div style={s.bar}><div style={{ ...s.barFill, width: `${pct}%` }} /></div>
+                <div style={s.bar}><div style={{ ...s.barFill, width: `${notStarted ? 0 : pct}%`, background: ended ? '#b00000' : '#0070f3' }} /></div>
                 {b.plan.goal && <div style={s.planGoal}>{b.plan.goal}</div>}
               </Link>
             );

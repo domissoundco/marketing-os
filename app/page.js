@@ -39,7 +39,7 @@ export default async function Home() {
     }
     brandSummaries.push({
       slug: b.slug, name: b.name,
-      plan: plan ? { startedAt: plan.startedAt, reviewDate: plan.reviewDate, goal: plan.goal } : null,
+      plan: plan ? { startedAt: plan.startedAt, startDate: plan.startDate, reviewDate: plan.reviewDate, goal: plan.goal } : null,
     });
     if (b.focus) focusBrands.push({ slug: b.slug, name: b.name, focusNote: b.focusNote || '' });
 

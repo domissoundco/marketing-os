@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
 const PLAN_FIELDS = [
   'vision', 'positioning', 'targetCustomer', 'coreOffer',
   'goal', 'revenueFocus', 'marketing', 'keyMetrics',
-  'reviewDate', 'contingency', 'bigBet',
+  'startDate', 'reviewDate', 'contingency', 'bigBet',
 ];
 
 export async function PUT(req, { params }) {
