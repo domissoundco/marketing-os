@@ -87,7 +87,54 @@ export default function PostsManager({ brandSlug, initialPosts, products }) {
 
 // ── Composer ──────────────────────────────────────────────────────────
 
+function HowToWritePost() {
+  return (
+    <div style={helpStyles.panel}>
+      <p style={helpStyles.lead}>The brief isn’t the post — it tells the AI what it’s <em>about</em>. Your Identity already handles how you sound. Scrappy is fine.</p>
+
+      <div style={helpStyles.block}>
+        <div style={helpStyles.h}>The 3-part brief</div>
+        <ol style={helpStyles.ol}>
+          <li><strong>The moment</strong> — the real thing (names, places, kit).</li>
+          <li><strong>The point</strong> — what it shows a PM: proactive · owns scope · meticulous · no drama · safety net · always learning.</li>
+          <li><strong>Lead with their problem</strong>, not your service. The PM’s headache first.</li>
+        </ol>
+        <div style={helpStyles.note}>Diary entry (“what I did today”) ✕ → “what this shows a PM about me” ✓</div>
+      </div>
+
+      <div style={helpStyles.block}>
+        <div style={helpStyles.h}>“I” vs “we”</div>
+        <p style={helpStyles.p}><strong>I</strong> = decisions and ownership (your asset — default to it). <strong>we</strong> = the graft, with a real crew. Led it with a team? Use both.</p>
+      </div>
+
+      <div style={helpStyles.block}>
+        <div style={helpStyles.h}>After Generate</div>
+        <p style={helpStyles.p}>Read it <strong>out loud</strong>. Tweak by hand. Anything that jars → it’s a never-say. Then <strong>Save &amp; write next</strong>. Don’t critique every post.</p>
+      </div>
+
+      <div style={helpStyles.block}>
+        <div style={helpStyles.h}>Never-say</div>
+        <p style={helpStyles.banned}>world-class · passionate · game-changing · synergy · seamless · elevate · solutions · thrilled/delighted to announce · humbled &amp; honoured · expert · guru · best · “Agree?” · emoji bullets · exclamation-mark energy</p>
+      </div>
+
+      <div style={helpStyles.block}>
+        <div style={helpStyles.h}>Brief starters</div>
+        <ul style={helpStyles.ul}>
+          <li>“PM gets a room dumped on them last-minute — how I take it off their plate.”</li>
+          <li>“[Hard job, named place]. What I do so it doesn’t fall over.”</li>
+          <li>“Why I [meticulous habit] like it’s going to be photographed.”</li>
+          <li>“Booked as the audio guy, ended up [the safety-net thing].”</li>
+          <li>“Quick one: what [SMAART / RF] is actually telling you that people misread.”</li>
+        </ul>
+      </div>
+
+      <div style={helpStyles.tip}>Set channel to LinkedIn · add a photo if you’ve got one · then Generate.</div>
+    </div>
+  );
+}
+
 function Composer({ brandSlug, onSaved }) {
+  const [showHelp, setShowHelp] = useState(false);
   const [mode, setMode] = useState('blank'); // 'blank' | 'review'
   const [post, setPost] = useState(null);
   const [brief, setBrief] = useState('');
@@ -223,7 +270,13 @@ function Composer({ brandSlug, onSaved }) {
 
   return (
     <section style={cardStyles.composer}>
-      <div style={cardStyles.composerLabel}>Write a post</div>
+      <div style={cardStyles.composerLabelRow}>
+        <span style={cardStyles.composerLabel}>Write a post</span>
+        <button type="button" onClick={() => setShowHelp((v) => !v)} style={cardStyles.helpBtn} title="How to write a post">
+          {showHelp ? '✕ close' : 'ⓘ How to write a post'}
+        </button>
+      </div>
+      {showHelp && <HowToWritePost />}
       <textarea
         value={brief} onChange={(e) => setBrief(e.target.value)}
         placeholder="What's the post about? Lead with the reader's problem."
@@ -619,9 +672,24 @@ const listStyles = {
   chevron: { color: '#ccc', fontSize: 18, flexShrink: 0 },
 };
 
+const helpStyles = {
+  panel: { border: '1px solid #e8f3ff', background: '#f7fbff', borderRadius: 10, padding: '14px 16px', marginBottom: 12, fontSize: 13, color: '#333', lineHeight: 1.5 },
+  lead: { margin: '0 0 12px', color: '#222' },
+  block: { marginBottom: 12 },
+  h: { fontSize: 11, fontWeight: 700, color: '#0070f3', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 },
+  p: { margin: '0' },
+  ol: { margin: '0', paddingLeft: 18 },
+  ul: { margin: '0', paddingLeft: 18 },
+  note: { marginTop: 6, fontSize: 12, color: '#666', fontStyle: 'italic' },
+  banned: { margin: 0, fontSize: 12, color: '#a04000', lineHeight: 1.6 },
+  tip: { marginTop: 4, paddingTop: 10, borderTop: '1px solid #e0eefc', fontSize: 12, color: '#555' },
+};
+
 const cardStyles = {
   composer: { border: '1px solid #ddd', borderRadius: 12, padding: 20, background: '#fcfcfc' },
   composerLabel: { fontSize: 12, color: '#666', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10 },
+  composerLabelRow: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 10 },
+  helpBtn: { background: 'none', border: 'none', color: '#0070f3', fontSize: 12, cursor: 'pointer', padding: 0, fontFamily: 'inherit', whiteSpace: 'nowrap' },
   card: { border: '1px solid #0070f3', borderRadius: 12, padding: 20, marginBottom: 16, background: '#fff', boxShadow: '0 2px 8px rgba(0,112,243,0.08)' },
   cardHead: { display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 },
   metaText: { color: '#888', fontSize: 13, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
